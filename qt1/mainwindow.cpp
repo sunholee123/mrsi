@@ -1,12 +1,10 @@
-#include <QtWidgets>
 #include "MainWindow.h"
 MainWindow::MainWindow()
 {
 	// main widget
-	mainwidget = new QWidget;
-	mainwidget->setBackgroundRole(QPalette::Dark);
-	mainwidget->setLayout(mainLayout);
-	setCentralWidget(mainwidget);
+	mainWidget = new QWidget();
+	mainWidget->setBackgroundRole(QPalette::Dark);
+	setCentralWidget(mainWidget);
 
 	for (int i = 0; i < 3; i++)
 	{
@@ -18,6 +16,7 @@ MainWindow::MainWindow()
 	}
 	
 	mainLayout = new QGridLayout;
+	mainWidget->setLayout(mainLayout);
 	mainLayout->addWidget(plane[CORONAL], 0, 0);
 	mainLayout->addWidget(plane[SAGITTAL], 0, 1);
 	mainLayout->addWidget(plane[AXIAL], 1, 0);
@@ -26,8 +25,8 @@ MainWindow::MainWindow()
 	for (int i = 0; i < 3; i++)
 	{
 		sliceSpinBox[i] = new QSpinBox();
-		sliceSpinBox[i]->setRange(0, 180);
-		sliceNum[i] = 90;
+		sliceSpinBox[i]->setRange(1, 1);
+		sliceNum[i] = 1;
 		sliceSpinBox[i]->setValue(sliceNum[i]);
 	}
 	connect(sliceSpinBox[0], SIGNAL(valueChanged(int)), this, SLOT(valueUpdateCor(int)));
@@ -101,7 +100,7 @@ void MainWindow::drawPlane(int planeType)
 	plane[planeType]->setPixmap(QPixmap::fromImage(slice));
 }
 
-bool MainWindow::loadFile(const QString &fileName)
+bool MainWindow::loadImageFile(const QString &fileName)
 {
 	// load mri image
 	string filename = fileName.toStdString();
@@ -110,13 +109,14 @@ bool MainWindow::loadFile(const QString &fileName)
 	imgvol = img->readAllVolumes<float>();
 
 	setDefaultIntensity();
+	setSliceNum();
 	drawPlane(CORONAL);
 	drawPlane(SAGITTAL);
 	drawPlane(AXIAL);
 
 	const QString message = tr("Opened \"%1\\").arg(QDir::toNativeSeparators(fileName));
 	statusBar()->showMessage(message);
-	
+
 	return true;
 }
 
@@ -124,42 +124,113 @@ void MainWindow::open()
 {
 	QFileDialog dialog(this, tr("Open File"));
 	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
-	while (dialog.exec() == QDialog::Accepted && !loadFile(dialog.selectedFiles().first())) {}
+	while (dialog.exec() == QDialog::Accepted && !loadImageFile(dialog.selectedFiles().first())) {}
+}
+
+void MainWindow::loadDicom()
+{
+	findDicomFiles();
 }
 
 void MainWindow::createActions()
 {
-	QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
+	QMenu *fileMenu = menuBar()->addMenu(tr("File"));
 
-	QAction *openAct = fileMenu->addAction(tr("&Open..."), this, &MainWindow::open);
-	openAct->setShortcut(QKeySequence::Open);
-
+	QAction *openImgAct = fileMenu->addAction(tr("Open Image File"), this, &MainWindow::open);
+	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom File"), this, &MainWindow::loadDicom);
 	fileMenu->addSeparator();
+	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
+}
 
-	QAction *exitAct = fileMenu->addAction(tr("E&xit"), this, &QWidget::close);
-	exitAct->setShortcut(tr("Ctrl+Q"));
+void MainWindow::setSliceNum()
+{
+	int sliceNumMax[3];
+	sliceNumMax[CORONAL] = img->ny();
+	sliceNumMax[SAGITTAL] = img->nx();
+	sliceNumMax[AXIAL] = img->nz();
 
-	QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
-
-	QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
-
-	viewMenu->addSeparator();
-
-	QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
+	for (int i = 0; i < 3; i++)
+	{
+		sliceNum[i] = sliceNumMax[i] / 2;
+		sliceSpinBox[i]->setRange(1, sliceNumMax[i]);
+		sliceSpinBox[i]->setValue(sliceNum[i]);
+	}
 }
 
 void MainWindow::valueUpdateCor(int value)
 {
-	sliceNum[CORONAL] = value;
+	sliceNum[CORONAL] = value - 1;
 	drawPlane(CORONAL);
 }
 void MainWindow::valueUpdateSag(int value)
 {
-	sliceNum[SAGITTAL] = value;
+	sliceNum[SAGITTAL] = value - 1;
 	drawPlane(SAGITTAL);
 }
 void MainWindow::valueUpdateAxi(int value)
 {
-	sliceNum[AXIAL] = value;
+	sliceNum[AXIAL] = value - 1;
 	drawPlane(AXIAL);
+}
+
+void MainWindow::findDicomFiles()//(QString dir)
+{
+	QString dir = "C:/New folder/20140212_CON000781_KSE_fu";
+	QDirIterator it(dir, QDir::Files, QDirIterator::Subdirectories);
+
+	DcmFileFormat fileformat;
+	OFCondition status;
+	OFString seriesNumber;
+	OFString seriesDescription;
+	DcmSequenceOfItems *sqi;
+	DcmItem *item;
+	DicomInfo T1, MRSI;
+	bool T1flag = false;
+	bool MRSIflag = false;
+	int counter = 0;
+	while (it.hasNext())
+	{
+		counter++;
+		if (counter % 100 == 0)
+		{
+			status = fileformat.loadFile(it.next().toStdString().c_str());
+			if (status.good()) {
+				if (fileformat.getDataset()->findAndGetSequence(DcmTag(0x2001, 0x105f, "Philips Imaging DD 001"), sqi, false, false).good()) {
+					if (fileformat.getDataset()->findAndGetOFString(DCM_SeriesDescription, seriesDescription).good()) {
+						if (!T1flag && seriesDescription.compare("T1_SAG_MPRAGE_1mm_ISO") == 0)
+						{
+							item = sqi->getItem(0);
+
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1078), T1.coordX, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1079), T1.coordY, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x107a), T1.coordZ, 0, false).good();
+
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1071), T1.angleX, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1072), T1.angleY, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1073), T1.angleZ, 0, false).good();
+							T1flag = true;
+						}
+						else if (!MRSIflag && seriesDescription.compare("3SL_SECSI_TE19") == 0)
+						{
+							item = sqi->getItem(0);
+
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1078), MRSI.coordX, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1079), MRSI.coordY, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x107a), MRSI.coordZ, 0, false).good();
+
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1071), MRSI.angleX, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1072), MRSI.angleY, 0, false).good();
+							item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleZ, 0, false).good();
+							MRSIflag = true;
+						}
+						if (T1flag && MRSIflag)
+							break;
+					}
+				}
+			}
+		}
+		else
+			it.next();
+
+	}
 }

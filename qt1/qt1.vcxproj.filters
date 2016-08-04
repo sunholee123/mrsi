@@ -78,5 +78,6 @@
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\..\..\..\Dropbox\MRSI\zlib128-dll\lib\zdll.lib" />
+    <Library Include="dcmtk.lib" />
   </ItemGroup>
 </Project>
