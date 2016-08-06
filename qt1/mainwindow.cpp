@@ -173,18 +173,16 @@ void MainWindow::valueUpdateAxi(int value)
 	drawPlane(AXIAL);
 }
 
-void MainWindow::findDicomFiles()//(QString dir)
+void MainWindow::findDicomFiles()
 {
 	QString dir = "C:/New folder/20140212_CON000781_KSE_fu";
 	QDirIterator it(dir, QDir::Files, QDirIterator::Subdirectories);
 
 	DcmFileFormat fileformat;
 	OFCondition status;
-	OFString seriesNumber;
 	OFString seriesDescription;
 	DcmSequenceOfItems *sqi;
 	DcmItem *item;
-	DicomInfo T1, MRSI;
 	bool T1flag = false;
 	bool MRSIflag = false;
 	int counter = 0;
@@ -195,37 +193,35 @@ void MainWindow::findDicomFiles()//(QString dir)
 		{
 			status = fileformat.loadFile(it.next().toStdString().c_str());
 			if (status.good()) {
-				if (fileformat.getDataset()->findAndGetSequence(DcmTag(0x2001, 0x105f, "Philips Imaging DD 001"), sqi, false, false).good()) {
-					if (fileformat.getDataset()->findAndGetOFString(DCM_SeriesDescription, seriesDescription).good()) {
-						if (!T1flag && seriesDescription.compare("T1_SAG_MPRAGE_1mm_ISO") == 0)
-						{
-							item = sqi->getItem(0);
-
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1078), T1.coordX, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1079), T1.coordY, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x107a), T1.coordZ, 0, false).good();
-
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1071), T1.angleX, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1072), T1.angleY, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1073), T1.angleZ, 0, false).good();
-							T1flag = true;
-						}
-						else if (!MRSIflag && seriesDescription.compare("3SL_SECSI_TE19") == 0)
-						{
-							item = sqi->getItem(0);
-
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1078), MRSI.coordX, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1079), MRSI.coordY, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x107a), MRSI.coordZ, 0, false).good();
-
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1071), MRSI.angleX, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1072), MRSI.angleY, 0, false).good();
-							item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleZ, 0, false).good();
-							MRSIflag = true;
-						}
-						if (T1flag && MRSIflag)
-							break;
+				if (fileformat.getDataset()->findAndGetSequence(DcmTag(0x2001, 0x105f, "Philips Imaging DD 001"), sqi, false, false).good()
+					&& fileformat.getDataset()->findAndGetOFString(DCM_SeriesDescription, seriesDescription).good()) {
+					if (!T1flag && seriesDescription.compare("T1_SAG_MPRAGE_1mm_ISO") == 0)
+					{
+						item = sqi->getItem(0);
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), T1.coordX, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), T1.coordY, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), T1.coordZ, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), T1.angleX, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), T1.angleY, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), T1.angleZ, 0, false).good();
+						T1flag = true;
 					}
+					else if (!MRSIflag && seriesDescription.compare("3SL_SECSI_TE19") == 0)
+					{
+						item = sqi->getItem(0);
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), MRSI.coordX, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), MRSI.coordY, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), MRSI.coordZ, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), MRSI.angleX, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), MRSI.angleY, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleZ, 0, false).good();
+
+						// mrsi voxel size, slab
+						// 
+						MRSIflag = true;
+					}
+					if (T1flag && MRSIflag)
+						break;
 				}
 			}
 		}
@@ -233,4 +229,19 @@ void MainWindow::findDicomFiles()//(QString dir)
 			it.next();
 
 	}
+	makeSlab();
+}
+
+void MainWindow::makeSlab()
+{
+	float mrsiVoxelSizeX = 6.875;
+	float mrsiVoxelSizeY = 6.875;
+	float mrsiVoxelSizeZ = 15;
+
+	int mrsiSlabNum = 3;
+	int mrsiVoxelNumX = 32;
+	int mrsiVoxelNumY = 32;
+
+	MatrixXf a;
+
 }

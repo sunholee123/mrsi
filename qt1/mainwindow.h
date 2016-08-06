@@ -66,7 +66,11 @@ private:
 	void drawPlane(int planeType);
 
 	// DICOM
+	DicomInfo T1, MRSI;
 	void findDicomFiles();
+
+	// Slab
+	void makeSlab();
 };
 
 
