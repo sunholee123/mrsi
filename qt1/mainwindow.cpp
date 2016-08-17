@@ -20,7 +20,7 @@ MainWindow::MainWindow()
 	mainLayout->addWidget(plane[CORONAL], 0, 0);
 	mainLayout->addWidget(plane[SAGITTAL], 0, 1);
 	mainLayout->addWidget(plane[AXIAL], 1, 0);
-
+	 
 	// spinboxes for controlling slices
 	for (int i = 0; i < 3; i++)
 	{
@@ -54,19 +54,31 @@ MainWindow::~MainWindow()
 {
 	if(img != NULL)
 		delete img;
-	if (imgvol != NULL)
-		delete [] imgvol;
+	/*if (imgvol != NULL)
+		delete [] imgvol;*/
+	if (!imgvol.empty())
+		imgvol = std::vector<std::vector<std::vector<float>>>();
 }
 
 void MainWindow::setDefaultIntensity()
 {
 	// find maximum value
 	float maxval = 0;
-	for (int i = 0; i < img->nx()*img->ny()*img->nz(); i++)
+	/*for (int i = 0; i < img->nx()*img->ny()*img->nz(); i++)
 	{
 		if (imgvol[i] > maxval)
 			maxval = imgvol[i];
 	}
+	*/
+
+	for (int i = 0; i < img->nx(); i++) {
+		for (int j = 0; j < img->ny(); j++) {
+			for (int k = 0; k < img->nz(); k++) {
+				if (imgvol[i][j][k] > maxval) { maxval = imgvol[i][j][k]; }
+			}
+		}
+	}	
+
 	//intensity = 256 / maxval;
 	intensity = 300 / maxval;
 }
@@ -89,9 +101,12 @@ void MainWindow::drawPlane(int planeType)
 		{
 			switch (planeType)
 			{
-			case CORONAL:	val = imgvol[i + (j * width * height) + (width * sliceNum[planeType])];	break;
+			/*case CORONAL:	val = imgvol[i + (j * width * height) + (width * sliceNum[planeType])];	break;
 			case SAGITTAL:	val = imgvol[(i * img->nx()) + (j * img->nx() * height) + sliceNum[planeType]];	break;
-			case AXIAL:		val = imgvol[i + (j * width) + (width * height * sliceNum[planeType])];	break;
+			case AXIAL:		val = imgvol[i + (j * width) + (width * height * sliceNum[planeType])];	break;*/
+			case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
+			case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
+			case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
 			}
 			val = val * intensity;
 			value = qRgb(val, val, val);
@@ -106,8 +121,9 @@ bool MainWindow::loadImageFile(const QString &fileName)
 	string filename = fileName.toStdString();
 	
 	img = new NiftiImage(filename, 'r');
-	imgvol = img->readAllVolumes<float>();
-
+	//imgvol = img->readAllVolumes<float>();
+	arr1Dto3D(img->readAllVolumes<float>());
+	
 	setDefaultIntensity();
 	setSliceNum();
 	drawPlane(CORONAL);
@@ -244,4 +260,26 @@ void MainWindow::makeSlab()
 
 	MatrixXf a;
 
+}
+
+void MainWindow::arr1Dto3D(float* array1D) {
+	const size_t dimX = img->nx();
+	const size_t dimY = img->ny();
+	const size_t dimZ = img->nz();
+
+	imgvol.resize(dimX);
+	for (int i = 0; i < dimX; i++) {
+		imgvol[i].resize(dimY);
+		for (int j = 0; j < dimY; j++) {
+			imgvol[i][j].resize(dimZ);
+		}
+	}
+
+	for (int i = 0; i < dimX; i++) {
+		for (int j = 0; j < dimY; j++) {
+			for (int k = 0; k < dimZ; k++) {
+				imgvol[i][j][k] = array1D[i + j*dimX + k*dimX*dimY];
+			}
+		}
+	}
 }

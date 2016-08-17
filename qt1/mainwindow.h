@@ -5,6 +5,7 @@
 #include <QtWidgets>
 #include <QImage>
 #include "NiftiImage.h"
+#include <vector>
 
 #include "dcmtk/config/osconfig.h"
 #include "dcmtk/dcmdata/dctk.h"
@@ -59,7 +60,9 @@ private:
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
-	float * imgvol = NULL;
+	//float * imgvol = NULL;
+	std::vector<std::vector<std::vector<float>>> imgvol;
+	void arr1Dto3D(float* array1D);
 
 	void setDefaultIntensity();
 	float intensity;
