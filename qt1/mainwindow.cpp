@@ -258,7 +258,25 @@ void MainWindow::makeSlab()
 	int mrsiVoxelNumX = 32;
 	int mrsiVoxelNumY = 32;
 
-	MatrixXf a;
+	MatrixXf a(img->nx(), img->ny(), img->nz());
+	for (int i = 0; i < img->nx; i++)
+		for (int j = 0; j < img->ny; j++)
+			for (int k = 0; k < img->nz; k++)
+				a(i, j, k) = img[i][j][k];
+	
+	
+
+	float ax = 0.1;
+	float ay = 0.1;
+	float az = 0.1;
+	Affine3d rx = Affine3d(AngleAxisd(ax, Vector3d(1, 0, 0)));
+	Affine3d ry = Affine3d(AngleAxisd(ay, Vector3d(0, 1, 0)));
+	Affine3d rz = Affine3d(AngleAxisd(az, Vector3d(0, 0, 1)));
+	Affine3d r = rx * ry * rz;
+	Affine3d t(Translation3d(Vector3d(1, 1, 1)));
+	Matrix4d m = (t * r).matrix();
+	
+	MatrixXf asdf = a*m;
 
 }
 
@@ -282,4 +300,19 @@ void MainWindow::arr1Dto3D(float* array1D) {
 			}
 		}
 	}
+}
+
+vector<vector<vector<float>>> MainWindow::rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz)
+{
+	vector<vector<vector<float>>> imgvol_new = imgvol;
+	imgvol_new.clear();
+
+	for (int i = 0; i < img->nx; i++)
+	for (int j = 0; j < img->ny; j++)
+	for (int k = 0; k < img->nz; k++)
+
+
+
+	
+
 }

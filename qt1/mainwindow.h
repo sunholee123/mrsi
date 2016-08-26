@@ -74,6 +74,8 @@ private:
 
 	// Slab
 	void makeSlab();
+	vector<vector<vector<float>>> rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz)
+
 };
 
 
