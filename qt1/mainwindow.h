@@ -81,10 +81,6 @@ private:
 	// Slab
 	bool overlay = false;
 	void makeSlab();
-	bool loadSlab(const QString &);
-	NiftiImage *slab = NULL;
-	std::vector<std::vector<std::vector<float>>> slabvol;
-	void overlaySlab(int planeType);
 };
 
 

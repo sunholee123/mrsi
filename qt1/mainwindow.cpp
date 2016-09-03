@@ -378,6 +378,9 @@ void MainWindow::makeSlab() {
 	int mrsiSlabNum = 3;
 	int mrsiVoxelNumX = 32;
 	int mrsiVoxelNumY = 32;
+
+	MatrixXf a;
+
 }
 
 /*
@@ -432,4 +435,19 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 		case t1image: imgvol = imagevol; break;
 		case slabimage: slabvol = imagevol; break;
 	}
+}
+
+vector<vector<vector<float>>> MainWindow::rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz)
+{
+	vector<vector<vector<float>>> imgvol_new = imgvol;
+	imgvol_new.clear();
+
+	for (int i = 0; i < img->nx; i++)
+	for (int j = 0; j < img->ny; j++)
+	for (int k = 0; k < img->nz; k++)
+
+
+
+	
+
 }
