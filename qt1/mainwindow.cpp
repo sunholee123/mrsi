@@ -62,8 +62,6 @@ MainWindow::~MainWindow()
 
 void MainWindow::setDefaultIntensity()
 {
-	// find maximum value
-	float maxval = 0;
 	/*for (int i = 0; i < img->nx()*img->ny()*img->nz(); i++)
 	{
 		if (imgvol[i] > maxval)
@@ -71,6 +69,8 @@ void MainWindow::setDefaultIntensity()
 	}
 	*/
 
+	// find maximum value
+	float maxval = 0;
 	for (int i = 0; i < img->nx(); i++) {
 		for (int j = 0; j < img->ny(); j++) {
 			for (int k = 0; k < img->nz(); k++) {
@@ -83,14 +83,13 @@ void MainWindow::setDefaultIntensity()
 	intensity = 300 / maxval;
 }
 
-void MainWindow::drawPlane(int planeType)
-{
+
+void MainWindow::drawPlane(int planeType){
 	int width, height;
-	switch(planeType)
-	{
-	case CORONAL:	width = img->nx();	height = img->nz();	break;
-	case SAGITTAL:	width = img->ny();	height = img->nz();	break;
-	case AXIAL:		width = img->nx();	height = img->ny();	break;
+	switch(planeType){
+		case CORONAL:	width = img->nx();	height = img->nz();	break;
+		case SAGITTAL:	width = img->ny();	height = img->nz();	break;
+		case AXIAL:		width = img->nx();	height = img->ny();	break;
 	}
 
 	QImage slice(width, height, QImage::Format_RGB32);
@@ -99,14 +98,10 @@ void MainWindow::drawPlane(int planeType)
 	for (int i = 0; i<width; i++)
 		for (int j = 0; j<height; j++)
 		{
-			switch (planeType)
-			{
-			/*case CORONAL:	val = imgvol[i + (j * width * height) + (width * sliceNum[planeType])];	break;
-			case SAGITTAL:	val = imgvol[(i * img->nx()) + (j * img->nx() * height) + sliceNum[planeType]];	break;
-			case AXIAL:		val = imgvol[i + (j * width) + (width * height * sliceNum[planeType])];	break;*/
-			case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
-			case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
-			case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
+			switch (planeType){
+				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
 			}
 			val = val * intensity;
 			value = qRgb(val, val, val);
@@ -115,15 +110,76 @@ void MainWindow::drawPlane(int planeType)
 	plane[planeType]->setPixmap(QPixmap::fromImage(slice));
 }
 
+
+/*
+void MainWindow::drawPlane(int planeType){
+	int width, height;
+	switch (planeType){
+		case CORONAL:	width = img->nx();	height = img->nz();	break;
+		case SAGITTAL:	width = img->ny();	height = img->nz();	break;
+		case AXIAL:		width = img->nx();	height = img->ny();	break;
+	}
+
+	QImage slice(width, height, QImage::Format_RGB32);
+	QRgb value;
+	float val;
+
+	if (overlay) {
+		QImage slab(width, height, QImage::Format_RGB32);
+		QImage result(width, height, QImage::Format_RGB32);
+
+		QRgb value2;
+		float val2;
+
+		for (int i = 0; i < width; i++) {
+			for (int j = 0; j < height; j++){
+				switch (planeType) {
+				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; val2 = slabvol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; val2 = slabvol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; val2 = slabvol[i][j][sliceNum[planeType]]; break;
+				}
+				val = val * intensity;
+				value = qRgb(val, val, val);
+				value2 = qRgba(val2, 0, 0, 0.5);
+				slice.setPixel(i, height - j, value);
+				slab.setPixel(i, height - j, value2);
+			}
+		}
+		result.fill(Qt::transparent);
+		QPainter painter(&result);
+		painter.drawImage(0, 0, slice);
+		painter.drawImage(100, 100, slab);
+		plane[planeType]->setPixmap(QPixmap::fromImage(result));
+	}
+	else {
+		for (int i = 0; i < width; i++) {
+			for (int j = 0; j<height; j++) {
+				switch (planeType) {
+				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
+				}
+				val = val * intensity;
+				value = qRgb(val, val, val);
+				slice.setPixel(i, height - j, value);
+			}
+		}
+		plane[planeType]->setPixmap(QPixmap::fromImage(slice));
+	}
+}
+*/
+
 bool MainWindow::loadImageFile(const QString &fileName)
 {
 	// load mri image
 	string filename = fileName.toStdString();
 	
 	img = new NiftiImage(filename, 'r');
+	arr1Dto3D(img, t1image);
+
 	//imgvol = img->readAllVolumes<float>();
-	arr1Dto3D(img->readAllVolumes<float>());
-	
+	//arr1Dto3D(img->readAllVolumes<float>());
+
 	setDefaultIntensity();
 	setSliceNum();
 	drawPlane(CORONAL);
@@ -148,12 +204,76 @@ void MainWindow::loadDicom()
 	findDicomFiles();
 }
 
+void MainWindow::openSlab() {
+	QFileDialog dialog(this, tr("Open File"));
+	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
+	while (dialog.exec() == QDialog::Accepted && !loadSlab(dialog.selectedFiles().first())) {}
+}
+
+bool MainWindow::loadSlab(const QString &fileName) {
+	string filename = fileName.toStdString();
+	slab = new NiftiImage(filename, 'r');
+	arr1Dto3D(slab, slabimage);
+
+	overlaySlab(CORONAL);
+	overlaySlab(SAGITTAL);
+	overlaySlab(AXIAL);
+	overlay = true;
+
+	return true;
+}
+
+void MainWindow::overlaySlab(int planeType) {
+	int width, height;
+	switch (planeType) {
+	case CORONAL:	width = slab->nx();	height = slab->nz();	break;
+	case SAGITTAL:	width = slab->ny();	height = slab->nz();	break;
+	case AXIAL:		width = slab->nx();	height = slab->ny();	break;
+	}
+
+	QImage base = plane[planeType]->pixmap()->toImage();
+	QImage overlay(width, height, QImage::Format_ARGB32);
+	QImage result(width, height, QImage::Format_ARGB32_Premultiplied);
+	QPainter painter(&result);
+
+	QRgb value;
+	float val;
+	for (int i = 0; i < width; i++) {
+		for (int j = 0; j < height; j++)
+		{
+			switch (planeType) {
+			case CORONAL: val = slabvol[i][sliceNum[planeType]][j]; break;
+			case SAGITTAL: val = slabvol[sliceNum[planeType]][i][j]; break;
+			case AXIAL: val = slabvol[i][j][sliceNum[planeType]]; break;
+			}
+			if (val == -1) { value = qRgba(0, 0, 0, 0); }
+			else { value = qRgba(val*intensity, val*intensity, 0, 255); }
+			overlay.setPixel(i, height - j, value);
+		}
+	}
+
+	painter.setCompositionMode(QPainter::CompositionMode_Source);
+	painter.fillRect(result.rect(), Qt::transparent);
+	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+	painter.drawImage(0, 0, base);
+	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+	painter.setOpacity(0.5);
+	painter.drawImage(0, 0, overlay);
+	painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+	painter.fillRect(result.rect(), Qt::white);
+	painter.end();
+
+	plane[planeType]->setPixmap(QPixmap::fromImage(result));
+}
+
 void MainWindow::createActions()
 {
 	QMenu *fileMenu = menuBar()->addMenu(tr("File"));
 
 	QAction *openImgAct = fileMenu->addAction(tr("Open Image File"), this, &MainWindow::open);
 	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom File"), this, &MainWindow::loadDicom);
+	QAction *overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
+
 	fileMenu->addSeparator();
 	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
 }
@@ -177,16 +297,19 @@ void MainWindow::valueUpdateCor(int value)
 {
 	sliceNum[CORONAL] = value - 1;
 	drawPlane(CORONAL);
+	if (overlay == true) { overlaySlab(CORONAL); }
 }
 void MainWindow::valueUpdateSag(int value)
 {
 	sliceNum[SAGITTAL] = value - 1;
 	drawPlane(SAGITTAL);
+	if (overlay == true) { overlaySlab(SAGITTAL); }
 }
 void MainWindow::valueUpdateAxi(int value)
 {
 	sliceNum[AXIAL] = value - 1;
 	drawPlane(AXIAL);
+	if (overlay == true) { overlaySlab(AXIAL); }
 }
 
 void MainWindow::findDicomFiles()
@@ -233,7 +356,6 @@ void MainWindow::findDicomFiles()
 						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleZ, 0, false).good();
 
 						// mrsi voxel size, slab
-						// 
 						MRSIflag = true;
 					}
 					if (T1flag && MRSIflag)
@@ -245,11 +367,10 @@ void MainWindow::findDicomFiles()
 			it.next();
 
 	}
-	makeSlab();
+	//makeSlab();
 }
 
-void MainWindow::makeSlab()
-{
+void MainWindow::makeSlab() {
 	float mrsiVoxelSizeX = 6.875;
 	float mrsiVoxelSizeY = 6.875;
 	float mrsiVoxelSizeZ = 15;
@@ -257,11 +378,9 @@ void MainWindow::makeSlab()
 	int mrsiSlabNum = 3;
 	int mrsiVoxelNumX = 32;
 	int mrsiVoxelNumY = 32;
-
-	MatrixXf a;
-
 }
 
+/*
 void MainWindow::arr1Dto3D(float* array1D) {
 	const size_t dimX = img->nx();
 	const size_t dimY = img->ny();
@@ -281,5 +400,36 @@ void MainWindow::arr1Dto3D(float* array1D) {
 				imgvol[i][j][k] = array1D[i + j*dimX + k*dimX*dimY];
 			}
 		}
+	}
+}
+*/
+
+void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
+	const size_t dimX = image->nx();
+	const size_t dimY = image->ny();
+	const size_t dimZ = image->nz();
+
+	float *array1D = image->readAllVolumes<float>();
+	std::vector<std::vector<std::vector<float>>> imagevol;
+
+	imagevol.resize(dimX);
+	for (int i = 0; i < dimX; i++) {
+		imagevol[i].resize(dimY);
+		for (int j = 0; j < dimY; j++) {
+			imagevol[i][j].resize(dimZ);
+		}
+	}
+
+	for (int i = 0; i < dimX; i++) {
+		for (int j = 0; j < dimY; j++) {
+			for (int k = 0; k < dimZ; k++) {
+				imagevol[i][j][k] = array1D[i + j*dimX + k*dimX*dimY];
+			}
+		}
+	}
+
+	switch (imageType) {
+		case t1image: imgvol = imagevol; break;
+		case slabimage: slabvol = imagevol; break;
 	}
 }

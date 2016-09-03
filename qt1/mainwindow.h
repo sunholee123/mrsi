@@ -14,6 +14,9 @@
 #define SAGITTAL 1
 #define AXIAL 2
 
+#define t1image 0
+#define slabimage 1
+
 struct DicomInfo
 {
 	Float32 coordX, coordY, coordZ;
@@ -37,6 +40,7 @@ public:
 	private slots:
 	void open();
 	void loadDicom();
+	void openSlab();
 	void valueUpdateCor(int value);
 	void valueUpdateSag(int value);
 	void valueUpdateAxi(int value);
@@ -62,7 +66,9 @@ private:
 	NiftiImage *img = NULL;
 	//float * imgvol = NULL;
 	std::vector<std::vector<std::vector<float>>> imgvol;
-	void arr1Dto3D(float* array1D);
+	//void arr1Dto3D(float* array1D);
+	void arr1Dto3D(NiftiImage *image, int imageType);
+
 
 	void setDefaultIntensity();
 	float intensity;
@@ -73,7 +79,12 @@ private:
 	void findDicomFiles();
 
 	// Slab
+	bool overlay = false;
 	void makeSlab();
+	bool loadSlab(const QString &);
+	NiftiImage *slab = NULL;
+	std::vector<std::vector<std::vector<float>>> slabvol;
+	void overlaySlab(int planeType);
 };
 
 
