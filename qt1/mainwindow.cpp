@@ -46,8 +46,16 @@ MainWindow::MainWindow()
 		
 	}
 	mainLayout->addLayout(ctrlLayout, 1, 1);
-
 	createActions();
+
+	// LCModel info layout
+	lcmLayout = new QVBoxLayout;
+	QLabel *lcmInfoTitle = new QLabel("<font color='black'>LCModel Info</font>");
+	lcmInfoTitle->setFixedWidth(500);
+	lcmInfoTitle->setAlignment(Qt::AlignCenter);
+	lcmLayout->addWidget(lcmInfoTitle, 0, 0);
+	// Chemical info presentation -- need to know number of chemicals
+	mainLayout->addLayout(lcmLayout, 0, 2);	
 }
 
 MainWindow::~MainWindow()
@@ -109,65 +117,6 @@ void MainWindow::drawPlane(int planeType){
 		}
 	plane[planeType]->setPixmap(QPixmap::fromImage(slice));
 }
-
-
-/*
-void MainWindow::drawPlane(int planeType){
-	int width, height;
-	switch (planeType){
-		case CORONAL:	width = img->nx();	height = img->nz();	break;
-		case SAGITTAL:	width = img->ny();	height = img->nz();	break;
-		case AXIAL:		width = img->nx();	height = img->ny();	break;
-	}
-
-	QImage slice(width, height, QImage::Format_RGB32);
-	QRgb value;
-	float val;
-
-	if (overlay) {
-		QImage slab(width, height, QImage::Format_RGB32);
-		QImage result(width, height, QImage::Format_RGB32);
-
-		QRgb value2;
-		float val2;
-
-		for (int i = 0; i < width; i++) {
-			for (int j = 0; j < height; j++){
-				switch (planeType) {
-				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; val2 = slabvol[i][sliceNum[planeType]][j]; break;
-				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; val2 = slabvol[sliceNum[planeType]][i][j]; break;
-				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; val2 = slabvol[i][j][sliceNum[planeType]]; break;
-				}
-				val = val * intensity;
-				value = qRgb(val, val, val);
-				value2 = qRgba(val2, 0, 0, 0.5);
-				slice.setPixel(i, height - j, value);
-				slab.setPixel(i, height - j, value2);
-			}
-		}
-		result.fill(Qt::transparent);
-		QPainter painter(&result);
-		painter.drawImage(0, 0, slice);
-		painter.drawImage(100, 100, slab);
-		plane[planeType]->setPixmap(QPixmap::fromImage(result));
-	}
-	else {
-		for (int i = 0; i < width; i++) {
-			for (int j = 0; j<height; j++) {
-				switch (planeType) {
-				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
-				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
-				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
-				}
-				val = val * intensity;
-				value = qRgb(val, val, val);
-				slice.setPixel(i, height - j, value);
-			}
-		}
-		plane[planeType]->setPixmap(QPixmap::fromImage(slice));
-	}
-}
-*/
 
 bool MainWindow::loadImageFile(const QString &fileName)
 {
@@ -436,7 +385,8 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 		case slabimage: slabvol = imagevol; break;
 	}
 }
-
+// build error - temporary comment out
+/*
 vector<vector<vector<float>>> MainWindow::rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz)
 {
 	vector<vector<vector<float>>> imgvol_new = imgvol;
@@ -446,8 +396,5 @@ vector<vector<vector<float>>> MainWindow::rotation3d(vector<vector<vector<float>
 	for (int j = 0; j < img->ny; j++)
 	for (int k = 0; k < img->nz; k++)
 
-
-
-	
-
 }
+*/
