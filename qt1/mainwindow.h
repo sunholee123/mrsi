@@ -60,7 +60,7 @@ private:
 
 	QGridLayout *mainLayout;
 	QGridLayout *ctrlLayout;
-
+	QVBoxLayout *lcmLayout;
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
@@ -81,6 +81,11 @@ private:
 	// Slab
 	bool overlay = false;
 	void makeSlab();
+	bool loadSlab(const QString &);
+	NiftiImage *slab = NULL;
+	std::vector<std::vector<std::vector<float>>> slabvol;
+	void overlaySlab(int planeType);
+	vector<vector<vector<float>>> rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz);
 };
 
 
