@@ -10,6 +10,8 @@
 #include "dcmtk/config/osconfig.h"
 #include "dcmtk/dcmdata/dctk.h"
 
+#include "Eigen/Eigen"
+
 #define CORONAL 0
 #define SAGITTAL 1
 #define AXIAL 2
@@ -69,9 +71,11 @@ private:
 	//void arr1Dto3D(float* array1D);
 	void arr1Dto3D(NiftiImage *image, int imageType);
 
-
+	// Intensity
 	void setDefaultIntensity();
 	float intensity;
+
+	// Draw image
 	void drawPlane(int planeType);
 
 	// DICOM
@@ -85,7 +89,11 @@ private:
 	NiftiImage *slab = NULL;
 	std::vector<std::vector<std::vector<float>>> slabvol;
 	void overlaySlab(int planeType);
-	vector<vector<vector<float>>> rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz);
+	std::vector<std::vector<std::vector<float>>> MainWindow::makeDefaultSlab(std::vector<std::vector<std::vector<float>>> imagevol);
+
+	// Slab - transformation
+	vector<vector<vector<float>>> transformation3d(vector<vector<vector<float>>> imgvol, float cx, float cy, float cz, float ax, float ay, float az);
+	float deg2rad(float degree);
 };
 
 

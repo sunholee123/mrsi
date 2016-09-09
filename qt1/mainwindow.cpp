@@ -9,8 +9,8 @@ MainWindow::MainWindow()
 	for (int i = 0; i < 3; i++)
 	{
 		plane[i] = new QLabel();
-		plane[i]->setFixedWidth(500);
-		plane[i]->setFixedHeight(500);
+		plane[i]->setFixedWidth(300);
+		plane[i]->setFixedHeight(300);
 		//plane[i]->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
 		plane[i]->setScaledContents(true);
 	}
@@ -131,6 +131,7 @@ bool MainWindow::loadImageFile(const QString &fileName)
 
 	setDefaultIntensity();
 	setSliceNum();
+
 	drawPlane(CORONAL);
 	drawPlane(SAGITTAL);
 	drawPlane(AXIAL);
@@ -328,58 +329,7 @@ void MainWindow::makeSlab() {
 	int mrsiVoxelNumX = 32;
 	int mrsiVoxelNumY = 32;
 
-	float ax = 0.1;
-	float ay = 0.1;
-	float az = 0.1;
-	Affine3d rx = Affine3d(AngleAxisd(ax, Vector3d(1, 0, 0)));
-	Affine3d ry = Affine3d(AngleAxisd(ay, Vector3d(0, 1, 0)));
-	Affine3d rz = Affine3d(AngleAxisd(az, Vector3d(0, 0, 1)));
-	Affine3d r = rx * ry * rz;
-	Affine3d t(Translation3d(Vector3d(1, 1, 1)));
-	Matrix4d m = (t * r).matrix();
-
-	MatrixXf a(img->nx(), img->ny());
-	for (int k = 0; k < img->nz; k++)
-	for (int i = 0; i < img->nx; i++)
-	for (int j = 0; j < img->ny; j++)
-	{
-		a(i, j) = imgvol[i][j][k];
-		a = a*m;
-
-	}
-
-				
-
-
-
-	
-
-
 }
-
-/*
-void MainWindow::arr1Dto3D(float* array1D) {
-	const size_t dimX = img->nx();
-	const size_t dimY = img->ny();
-	const size_t dimZ = img->nz();
-
-	imgvol.resize(dimX);
-	for (int i = 0; i < dimX; i++) {
-		imgvol[i].resize(dimY);
-		for (int j = 0; j < dimY; j++) {
-			imgvol[i][j].resize(dimZ);
-		}
-	}
-
-	for (int i = 0; i < dimX; i++) {
-		for (int j = 0; j < dimY; j++) {
-			for (int k = 0; k < dimZ; k++) {
-				imgvol[i][j][k] = array1D[i + j*dimX + k*dimX*dimY];
-			}
-		}
-	}
-}
-*/
 
 void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 	const size_t dimX = image->nx();
@@ -411,28 +361,58 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 	}
 }
 // build error - temporary comment out
-/*
-vector<vector<vector<float>>> MainWindow::rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz)
-{
-	float coordX = 0;
-	float coordY = 0;
-	float coordZ = 0;
-	float rx = 10;
-	float ry = 10;
-	float rz = 10;
-	
-	const size_t dimX = image->nx();
-	const size_t dimY = image->ny();
-	const size_t dimZ = image->nz();
 
-	for (int i = 0; i < dimX; i++) {
-		imagevol[i].resize(dimY);
-		for (int j = 0; j < dimY; j++) {
-			imagevol[i][j].resize(dimZ);
+vector<vector<vector<float>>> MainWindow::transformation3d(vector<vector<vector<float>>> imagevol, float cx, float cy, float cz, float ax, float ay, float az)
+{
+	const size_t dimX = imagevol.size();
+	const size_t dimY = imagevol[0].size();
+	const size_t dimZ = imagevol[0][0].size();
+
+	Affine3f rx = Affine3f(AngleAxisf(deg2rad(ax), Vector3f(1, 0, 0)));
+	Affine3f ry = Affine3f(AngleAxisf(deg2rad(ay), Vector3f(0, 1, 0)));
+	Affine3f rz = Affine3f(AngleAxisf(deg2rad(az), Vector3f(0, 0, 1)));
+	Affine3f r = rx * ry * rz;
+	Affine3f t1(Translation3f(Vector3f(-round(dimX / 2), -round(dimY / 2), -round(dimZ / 2))));
+	Affine3f t2(Translation3f(Vector3f(round(dimX/2), round(dimY/2), round(dimZ/2))));
+	Matrix4f m = (t2 * r * t1).matrix();
+	Matrix4f m_inv = m.inverse();
+
+	std::vector<std::vector<std::vector<float>>> rotvol;
+	rotvol = imagevol;
+
+	MatrixXf imgcoord(4, 1);
+	MatrixXf newcoord(4, 1);
+	int x, y, z;
+//	QTime myTimer;
+//	myTimer.start();
+	for (int i = 0; i < dimX; i++)
+	{
+		for (int j = 0; j < dimY; j++)
+		{
+			for (int k = 0; k < dimZ; k++)
+			{
+				newcoord << i, j, k, 1;
+				imgcoord = m_inv * newcoord;
+				x = round(imgcoord(0));
+				y = round(imgcoord(1));
+				z = round(imgcoord(2));
+				if ((x < dimX) && (y < dimY) && (z < dimZ) && (x >= 0) && (y >= 0) && (z >= 0))
+					rotvol[i][j][k] = imagevol[x][y][z];
+				else
+					rotvol[i][j][k] = 0;
+			}
 		}
 	}
-
-	
-
+//	statusBar()->showMessage(QString::number(myTimer.elapsed()));
+	return rotvol;
 }
-*/
+
+float MainWindow::deg2rad(float degree)
+{
+	return degree * M_PI / 180;
+}
+
+std::vector<std::vector<std::vector<float>>> MainWindow::makeDefaultSlab(std::vector<std::vector<std::vector<float>>> imagevol)
+{
+	//imgvol = transformation3d(imgvol, 0, 0, 0, 10, 10, 10);
+}
