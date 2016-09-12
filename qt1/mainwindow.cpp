@@ -65,18 +65,11 @@ MainWindow::~MainWindow()
 	/*if (imgvol != NULL)
 		delete [] imgvol;*/
 	if (!imgvol.empty())
-		imgvol = std::vector<std::vector<std::vector<float>>>();
+		imgvol = vector<vector<vector<float>>>();
 }
 
 void MainWindow::setDefaultIntensity()
 {
-	/*for (int i = 0; i < img->nx()*img->ny()*img->nz(); i++)
-	{
-		if (imgvol[i] > maxval)
-			maxval = imgvol[i];
-	}
-	*/
-
 	// find maximum value
 	float maxval = 0;
 	for (int i = 0; i < img->nx(); i++) {
@@ -126,11 +119,13 @@ bool MainWindow::loadImageFile(const QString &fileName)
 	img = new NiftiImage(filename, 'r');
 	arr1Dto3D(img, t1image);
 
-	//imgvol = img->readAllVolumes<float>();
-	//arr1Dto3D(img->readAllVolumes<float>());
-
 	setDefaultIntensity();
 	setSliceNum();
+
+	// test
+//	imgvol = transformation3d(imgvol, 0, 0, 0, 10, 10, 10);
+//	makeSlab();
+	//
 
 	drawPlane(CORONAL);
 	drawPlane(SAGITTAL);
@@ -165,9 +160,9 @@ bool MainWindow::loadSlab(const QString &fileName) {
 	slab = new NiftiImage(filename, 'r');
 	arr1Dto3D(slab, slabimage);
 
-	overlaySlab(CORONAL);
 	overlaySlab(SAGITTAL);
 	overlaySlab(AXIAL);
+	overlaySlab(CORONAL);
 	overlay = true;
 
 	return true;
@@ -320,24 +315,13 @@ void MainWindow::findDicomFiles()
 	//makeSlab();
 }
 
-void MainWindow::makeSlab() {
-	float mrsiVoxelSizeX = 6.875;
-	float mrsiVoxelSizeY = 6.875;
-	float mrsiVoxelSizeZ = 15;
-
-	int mrsiSlabNum = 3;
-	int mrsiVoxelNumX = 32;
-	int mrsiVoxelNumY = 32;
-
-}
-
 void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 	const size_t dimX = image->nx();
 	const size_t dimY = image->ny();
 	const size_t dimZ = image->nz();
 
 	float *array1D = image->readAllVolumes<float>();
-	std::vector<std::vector<std::vector<float>>> imagevol;
+	vector<vector<vector<float>>> imagevol;
 
 	imagevol.resize(dimX);
 	for (int i = 0; i < dimX; i++) {
@@ -368,16 +352,26 @@ vector<vector<vector<float>>> MainWindow::transformation3d(vector<vector<vector<
 	const size_t dimY = imagevol[0].size();
 	const size_t dimZ = imagevol[0][0].size();
 
+	ax = 30;
+	ay = 40;
+	az = 50;
+
 	Affine3f rx = Affine3f(AngleAxisf(deg2rad(ax), Vector3f(1, 0, 0)));
 	Affine3f ry = Affine3f(AngleAxisf(deg2rad(ay), Vector3f(0, 1, 0)));
 	Affine3f rz = Affine3f(AngleAxisf(deg2rad(az), Vector3f(0, 0, 1)));
-	Affine3f r = rx * ry * rz;
+	//Affine3f r = rx * ry * rz;
+	Affine3f r = rz * ry * rx;
 	Affine3f t1(Translation3f(Vector3f(-round(dimX / 2), -round(dimY / 2), -round(dimZ / 2))));
 	Affine3f t2(Translation3f(Vector3f(round(dimX/2), round(dimY/2), round(dimZ/2))));
 	Matrix4f m = (t2 * r * t1).matrix();
 	Matrix4f m_inv = m.inverse();
 
-	std::vector<std::vector<std::vector<float>>> rotvol;
+	Quaternionf q;
+	q = AngleAxisf(deg2rad(ax), Vector3f::UnitX()) * AngleAxisf(deg2rad(ay), Vector3f::UnitY()) * AngleAxisf(deg2rad(az), Vector3f::UnitZ());
+	Matrix3f asdf = q.matrix();
+
+
+	vector<vector<vector<float>>> rotvol;
 	rotvol = imagevol;
 
 	MatrixXf imgcoord(4, 1);
@@ -412,7 +406,115 @@ float MainWindow::deg2rad(float degree)
 	return degree * M_PI / 180;
 }
 
-std::vector<std::vector<std::vector<float>>> MainWindow::makeDefaultSlab(std::vector<std::vector<std::vector<float>>> imagevol)
-{
-	//imgvol = transformation3d(imgvol, 0, 0, 0, 10, 10, 10);
+void MainWindow::makeSlab() {
+	// 
+/* code for reference
+sliceNumMax[SAGITTAL] = img->nx(); LR
+sliceNumMax[CORONAL] = img->ny(); AP
+sliceNumMax[AXIAL] = img->nz(); FH
+	*/
+
+	float t1VoxSizeX = img->dx();
+	float t1VoxSizeY = img->dy();
+	float t1VoxSizeZ = img->dz();
+
+	float mrsiVoxSizeX = 6.875;
+	float mrsiVoxSizeY = 6.875;
+	float mrsiVoxSizeZ = 15;
+
+	int mrsiVoxNumX = 32;
+	int mrsiVoxNumY = 32;
+	int mrsiVoxNumZ = 3;
+
+	float defSlabSizeX = mrsiVoxSizeX * mrsiVoxNumX / t1VoxSizeX;
+	float defSlabSizeY = mrsiVoxSizeY * mrsiVoxNumY / t1VoxSizeY;
+	float defSlabSizeZ = mrsiVoxSizeZ * mrsiVoxNumZ / t1VoxSizeZ;
+	int maxLength = round(pow(pow(defSlabSizeX, 2) + pow(defSlabSizeY, 2) + pow(defSlabSizeZ, 2), 0.5));
+
+	// slab image (full size)
+	vector<vector<vector<float>>> imagevol;
+	imagevol.resize(maxLength);
+	for (int i = 0; i < maxLength; i++) {
+		imagevol[i].resize(maxLength);
+		for (int j = 0; j < maxLength; j++) {
+			imagevol[i][j].resize(maxLength);
+		}
+	}
+
+	// fill default 
+	int slabMid = maxLength / 2;
+	int slabX = round(defSlabSizeX / 2);
+	int slabY = round(defSlabSizeY / 2);
+	int slabZ = round(defSlabSizeZ / 2);
+
+	for (int i = 0; i < maxLength; i++) {
+		for (int j = 0; j < maxLength; j++) {
+			for (int k = 0; k < maxLength; k++)
+			{
+				imagevol[i][j][k] = 0;
+			}
+		}
+	}
+//	int countk = 0;
+	int slabVal = 1;
+	for (int i = slabMid - slabX; i < slabMid + slabX; i++) {
+		for (int j = slabMid - slabY; j < slabMid + slabY; j++) {
+			for (int k = slabMid - slabZ; k < slabMid + slabZ; k++)
+			{
+				imagevol[i][j][k] = slabVal;
+			}
+		}
+	}
+
+	// rotate and translate
+//	imagevol = transformation3d(imagevol, 0, 0, 0, 10, 40, 10);
+
+	// slab image (full size)
+	vector<vector<vector<float>>> slab;
+	const size_t dimX = img->nx();
+	const size_t dimY = img->ny();
+	const size_t dimZ = img->nz();
+	slab.resize(dimX);
+	for (int i = 0; i < dimX; i++) {
+		slab[i].resize(dimY);
+		for (int j = 0; j < dimY; j++) {
+			slab[i][j].resize(dimZ);
+		}
+	}
+
+	// crop
+	int diffX = slabMid - round(dimX/2);
+	int diffY = slabMid - round(dimY/2);
+	int diffZ = slabMid - round(dimZ/2);
+
+	for (int i = 0; i < dimX; i++) {
+		for (int j = 0; j < dimY; j++) {
+			for (int k = 0; k < dimZ; k++)
+			{
+				slab[i][j][k] = imagevol[i + diffX][j + diffY][k + diffZ];
+			}
+		}
+	}
+	imgvol = slab;
+	NiftiImage asdf("asdf.nii.gz", 'w');
+	asdf = *img;
+	asdf.writeAllVolumes(arr3Dto1D(slab));
+}
+
+float* MainWindow::arr3Dto1D(vector<vector<vector<float>>> imagevol) {
+	const size_t dimX = img->nx();
+	const size_t dimY = img->ny();
+	const size_t dimZ = img->nz();
+
+	float *array1D = img->readAllVolumes<float>();
+	int n = 0;
+	for (int i = 0; i < dimX; i++) {
+		for (int j = 0; j < dimY; j++) {
+			for (int k = 0; k < dimZ; k++) {
+				 array1D[n] = imagevol[i][j][k];
+				 n++;
+			}
+		}
+	}
+	return array1D;
 }

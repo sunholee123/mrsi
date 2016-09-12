@@ -66,9 +66,7 @@ private:
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
-	//float * imgvol = NULL;
-	std::vector<std::vector<std::vector<float>>> imgvol;
-	//void arr1Dto3D(float* array1D);
+	vector<vector<vector<float>>> imgvol;
 	void arr1Dto3D(NiftiImage *image, int imageType);
 
 	// Intensity
@@ -87,13 +85,15 @@ private:
 	void makeSlab();
 	bool loadSlab(const QString &);
 	NiftiImage *slab = NULL;
-	std::vector<std::vector<std::vector<float>>> slabvol;
+	vector<vector<vector<float>>> slabvol;
 	void overlaySlab(int planeType);
-	std::vector<std::vector<std::vector<float>>> MainWindow::makeDefaultSlab(std::vector<std::vector<std::vector<float>>> imagevol);
 
 	// Slab - transformation
 	vector<vector<vector<float>>> transformation3d(vector<vector<vector<float>>> imgvol, float cx, float cy, float cz, float ax, float ay, float az);
 	float deg2rad(float degree);
+
+	float* arr3Dto1D(vector<vector<vector<float>>> imagevol);
+
 };
 
 
