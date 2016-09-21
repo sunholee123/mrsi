@@ -128,7 +128,7 @@ bool MainWindow::loadImageFile(const QString &fileName)
 
 	// test
 //	imgvol = transformation3d(imgvol, 0, 0, 0, 10, 10, 10);
-	makeSlab();
+//	makeSlab();
 	//
 
 	drawPlane(CORONAL);
