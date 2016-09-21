@@ -19,11 +19,12 @@
 #define t1image 0
 #define slabimage 1
 
-struct DicomInfo
+struct DicomInfo // that naming is not uncertain...
 {
-	Float32 coordX, coordY, coordZ;
-	Float32 angleX, angleY, angleZ;
+	Float32 coordFH, coordAP, coordRL;
+	Float32 angleFH, angleAP, angleRL;
 };
+typedef vector<vector<vector<float>>> vec3df; // vector - 3d - float
 
 class QAction;
 class QLabel;
@@ -66,7 +67,7 @@ private:
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
-	vector<vector<vector<float>>> imgvol;
+	vec3df imgvol;
 	void arr1Dto3D(NiftiImage *image, int imageType);
 
 	// Intensity
@@ -85,14 +86,15 @@ private:
 	void makeSlab();
 	bool loadSlab(const QString &);
 	NiftiImage *slab = NULL;
-	vector<vector<vector<float>>> slabvol;
+	vec3df slabvol;
 	void overlaySlab(int planeType);
 
 	// Slab - transformation
-	vector<vector<vector<float>>> transformation3d(vector<vector<vector<float>>> imgvol, float cx, float cy, float cz, float ax, float ay, float az);
+	vec3df transformation3d(vec3df imgvol, float coordFH, float coordAP, float coordRL , float angleFH, float angleAP, float angleRL);
 	float deg2rad(float degree);
 
-	float* arr3Dto1D(vector<vector<vector<float>>> imagevol);
+	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
+	bool saveImageFile(const char * filename, NiftiImage *image, vec3df data);
 
 };
 

@@ -56,6 +56,10 @@ MainWindow::MainWindow()
 	lcmLayout->addWidget(lcmInfoTitle, 0, 0);
 	// Chemical info presentation -- need to know number of chemicals
 	mainLayout->addLayout(lcmLayout, 0, 2);	
+
+	// for test
+	QString q = "INK0004.nii.gz";
+	loadImageFile(q);
 }
 
 MainWindow::~MainWindow()
@@ -65,7 +69,7 @@ MainWindow::~MainWindow()
 	/*if (imgvol != NULL)
 		delete [] imgvol;*/
 	if (!imgvol.empty())
-		imgvol = vector<vector<vector<float>>>();
+		imgvol = vec3df();
 }
 
 void MainWindow::setDefaultIntensity()
@@ -124,7 +128,7 @@ bool MainWindow::loadImageFile(const QString &fileName)
 
 	// test
 //	imgvol = transformation3d(imgvol, 0, 0, 0, 10, 10, 10);
-//	makeSlab();
+	makeSlab();
 	//
 
 	drawPlane(CORONAL);
@@ -282,23 +286,23 @@ void MainWindow::findDicomFiles()
 					if (!T1flag && seriesDescription.compare("T1_SAG_MPRAGE_1mm_ISO") == 0)
 					{
 						item = sqi->getItem(0);
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), T1.coordX, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), T1.coordY, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), T1.coordZ, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), T1.angleX, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), T1.angleY, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), T1.angleZ, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), T1.coordFH, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), T1.coordAP, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), T1.coordRL, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), T1.angleFH, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), T1.angleAP, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), T1.angleRL, 0, false).good();
 						T1flag = true;
 					}
 					else if (!MRSIflag && seriesDescription.compare("3SL_SECSI_TE19") == 0)
 					{
 						item = sqi->getItem(0);
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), MRSI.coordX, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), MRSI.coordY, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), MRSI.coordZ, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), MRSI.angleX, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), MRSI.angleY, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleZ, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), MRSI.coordFH, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), MRSI.coordAP, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), MRSI.coordRL, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), MRSI.angleFH, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), MRSI.angleAP, 0, false).good();
+						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleRL, 0, false).good();
 
 						// mrsi voxel size, slab
 						MRSIflag = true;
@@ -321,7 +325,7 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 	const size_t dimZ = image->nz();
 
 	float *array1D = image->readAllVolumes<float>();
-	vector<vector<vector<float>>> imagevol;
+	vec3df imagevol;
 
 	imagevol.resize(dimX);
 	for (int i = 0; i < dimX; i++) {
@@ -346,32 +350,24 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 }
 // build error - temporary comment out
 
-vector<vector<vector<float>>> MainWindow::transformation3d(vector<vector<vector<float>>> imagevol, float cx, float cy, float cz, float ax, float ay, float az)
+vec3df MainWindow::transformation3d(vec3df imagevol, float coordFH, float coordAP, float coordRL, float angleFH, float angleAP, float angleRL)
 {
 	const size_t dimX = imagevol.size();
 	const size_t dimY = imagevol[0].size();
 	const size_t dimZ = imagevol[0][0].size();
 
-	ax = 30;
-	ay = 40;
-	az = 50;
+	Affine3f rotFH = Affine3f(AngleAxisf(deg2rad(angleFH), Vector3f(0, 0, 1)));
+	Affine3f rotAP = Affine3f(AngleAxisf(deg2rad(angleAP), Vector3f(0, 1, 0)));
+	Affine3f rotRL = Affine3f(AngleAxisf(deg2rad(angleRL), Vector3f(-1, 0, 0)));
 
-	Affine3f rx = Affine3f(AngleAxisf(deg2rad(ax), Vector3f(1, 0, 0)));
-	Affine3f ry = Affine3f(AngleAxisf(deg2rad(ay), Vector3f(0, 1, 0)));
-	Affine3f rz = Affine3f(AngleAxisf(deg2rad(az), Vector3f(0, 0, 1)));
-	//Affine3f r = rx * ry * rz;
-	Affine3f r = rz * ry * rx;
+	Affine3f r = rotFH * rotAP * rotRL;
 	Affine3f t1(Translation3f(Vector3f(-round(dimX / 2), -round(dimY / 2), -round(dimZ / 2))));
 	Affine3f t2(Translation3f(Vector3f(round(dimX/2), round(dimY/2), round(dimZ/2))));
+	Affine3f t3(Translation3f(Vector3f(coordFH, coordAP, coordRL)));
 	Matrix4f m = (t2 * r * t1).matrix();
 	Matrix4f m_inv = m.inverse();
 
-	Quaternionf q;
-	q = AngleAxisf(deg2rad(ax), Vector3f::UnitX()) * AngleAxisf(deg2rad(ay), Vector3f::UnitY()) * AngleAxisf(deg2rad(az), Vector3f::UnitZ());
-	Matrix3f asdf = q.matrix();
-
-
-	vector<vector<vector<float>>> rotvol;
+	vec3df rotvol;
 	rotvol = imagevol;
 
 	MatrixXf imgcoord(4, 1);
@@ -379,12 +375,9 @@ vector<vector<vector<float>>> MainWindow::transformation3d(vector<vector<vector<
 	int x, y, z;
 //	QTime myTimer;
 //	myTimer.start();
-	for (int i = 0; i < dimX; i++)
-	{
-		for (int j = 0; j < dimY; j++)
-		{
-			for (int k = 0; k < dimZ; k++)
-			{
+	for (int i = 0; i < dimX; i++) {
+		for (int j = 0; j < dimY; j++) {
+			for (int k = 0; k < dimZ; k++) {
 				newcoord << i, j, k, 1;
 				imgcoord = m_inv * newcoord;
 				x = round(imgcoord(0));
@@ -406,14 +399,14 @@ float MainWindow::deg2rad(float degree)
 	return degree * M_PI / 180;
 }
 
-void MainWindow::makeSlab() {
-	// 
-/* code for reference
-sliceNumMax[SAGITTAL] = img->nx(); LR
-sliceNumMax[CORONAL] = img->ny(); AP
-sliceNumMax[AXIAL] = img->nz(); FH
-	*/
-
+void MainWindow::makeSlab()
+{
+/*
+	code for reference
+	sliceNumMax[SAGITTAL] = img->nx(); LR
+	sliceNumMax[CORONAL] = img->ny(); AP
+	sliceNumMax[AXIAL] = img->nz(); FH
+*/
 	float t1VoxSizeX = img->dx();
 	float t1VoxSizeY = img->dy();
 	float t1VoxSizeZ = img->dz();
@@ -432,7 +425,7 @@ sliceNumMax[AXIAL] = img->nz(); FH
 	int maxLength = round(pow(pow(defSlabSizeX, 2) + pow(defSlabSizeY, 2) + pow(defSlabSizeZ, 2), 0.5));
 
 	// slab image (full size)
-	vector<vector<vector<float>>> imagevol;
+	vec3df imagevol;
 	imagevol.resize(maxLength);
 	for (int i = 0; i < maxLength; i++) {
 		imagevol[i].resize(maxLength);
@@ -455,22 +448,27 @@ sliceNumMax[AXIAL] = img->nz(); FH
 			}
 		}
 	}
-//	int countk = 0;
-	int slabVal = 1;
-	for (int i = slabMid - slabX; i < slabMid + slabX; i++) {
-		for (int j = slabMid - slabY; j < slabMid + slabY; j++) {
-			for (int k = slabMid - slabZ; k < slabMid + slabZ; k++)
+	int slabdiffX = slabMid - slabX;
+	int slabdiffY = slabMid - slabY;
+	int slabdiffZ = slabMid - slabZ;
+
+	for (int i = slabdiffX; i < slabMid + slabX; i++) {
+		for (int j = slabdiffY; j < slabMid + slabY; j++) {
+			for (int k = slabdiffZ; k < slabMid + slabZ - 1; k++) // mrsiVoxNumZ가 홀수라서 -1 추가...
 			{
-				imagevol[i][j][k] = slabVal;
+				int voxNumX = mrsiVoxNumX + 1 - round((i - slabdiffX) / mrsiVoxSizeX + 0.5); // left to right
+				int voxNumY = mrsiVoxNumY + 1 - round((j - slabdiffY) / mrsiVoxSizeY + 0.5);
+				int voxNumZ = round((k - slabdiffZ) / mrsiVoxSizeZ + 0.5); // bottom to top
+				imagevol[i][j][k] = voxNumX + (voxNumY - 1) * mrsiVoxNumX + (voxNumZ - 1) * mrsiVoxNumX * mrsiVoxNumY;
 			}
 		}
 	}
 
 	// rotate and translate
-//	imagevol = transformation3d(imagevol, 0, 0, 0, 10, 40, 10);
+	imagevol = transformation3d(imagevol, 0, 0, 0, 2, 3, -44);
 
 	// slab image (full size)
-	vector<vector<vector<float>>> slab;
+	vec3df slab;
 	const size_t dimX = img->nx();
 	const size_t dimY = img->ny();
 	const size_t dimZ = img->nz();
@@ -495,26 +493,32 @@ sliceNumMax[AXIAL] = img->nz(); FH
 			}
 		}
 	}
+	saveImageFile("slab.nii.gz", img, slab);
+	// for test
 	imgvol = slab;
-	NiftiImage asdf("asdf.nii.gz", 'w');
-	asdf = *img;
-	asdf.writeAllVolumes(arr3Dto1D(slab));
 }
 
-float* MainWindow::arr3Dto1D(vector<vector<vector<float>>> imagevol) {
-	const size_t dimX = img->nx();
-	const size_t dimY = img->ny();
-	const size_t dimZ = img->nz();
+float* MainWindow::arr3Dto1D(NiftiImage *image, vec3df imagevol) {
+	const size_t dimX = imagevol.size();
+	const size_t dimY = imagevol[0].size();
+	const size_t dimZ = imagevol[0][0].size();
 
-	float *array1D = img->readAllVolumes<float>();
-	int n = 0;
+	float *array1D = image->readAllVolumes<float>();
 	for (int i = 0; i < dimX; i++) {
 		for (int j = 0; j < dimY; j++) {
 			for (int k = 0; k < dimZ; k++) {
-				 array1D[n] = imagevol[i][j][k];
-				 n++;
+				array1D[i + j*dimX + k*dimX*dimY] = imagevol[i][j][k];
 			}
 		}
 	}
 	return array1D;
+}
+
+bool MainWindow::saveImageFile(const char * filename, NiftiImage *image, vec3df data)
+{
+	NiftiImage temp(*image);
+	temp.open(filename, 'w');
+	temp.writeAllVolumes<float>(arr3Dto1D(image, data));
+
+	return true;
 }
