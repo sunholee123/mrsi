@@ -9,10 +9,10 @@ MainWindow::MainWindow()
 	for (int i = 0; i < 3; i++)
 	{
 		plane[i] = new QLabel();
-		plane[i]->setFixedWidth(300);
-		plane[i]->setFixedHeight(300);
-		//plane[i]->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-		plane[i]->setScaledContents(true);
+		plane[i]->setFixedWidth(planeSize);
+		plane[i]->setFixedHeight(planeSize);
+		plane[i]->setAlignment(Qt::AlignCenter);
+		plane[i]->setStyleSheet("background-color: black;");
 	}
 	
 	mainLayout = new QGridLayout;
@@ -58,16 +58,14 @@ MainWindow::MainWindow()
 	mainLayout->addLayout(lcmLayout, 0, 2);	
 
 	// for test
-	QString q = "INK0004.nii.gz";
-	loadImageFile(q);
+//	QString q = "INK0004.nii.gz";
+//	loadImageFile(q);
 }
 
 MainWindow::~MainWindow()
 {
 	if(img != NULL)
 		delete img;
-	/*if (imgvol != NULL)
-		delete [] imgvol;*/
 	if (!imgvol.empty())
 		imgvol = vec3df();
 }
@@ -83,11 +81,9 @@ void MainWindow::setDefaultIntensity()
 			}
 		}
 	}	
-
 	//intensity = 256 / maxval;
 	intensity = 300 / maxval;
 }
-
 
 void MainWindow::drawPlane(int planeType){
 	int width, height;
@@ -112,24 +108,21 @@ void MainWindow::drawPlane(int planeType){
 			value = qRgb(val, val, val);
 			slice.setPixel(i, height-j, value);
 		}
+	slice = slice.scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 	plane[planeType]->setPixmap(QPixmap::fromImage(slice));
+
 }
 
 bool MainWindow::loadImageFile(const QString &fileName)
 {
 	// load mri image
+	imgFileName = fileName;
 	string filename = fileName.toStdString();
-	
 	img = new NiftiImage(filename, 'r');
 	arr1Dto3D(img, t1image);
 
 	setDefaultIntensity();
 	setSliceNum();
-
-	// test
-//	imgvol = transformation3d(imgvol, 0, 0, 0, 10, 10, 10);
-	makeSlab();
-	//
 
 	drawPlane(CORONAL);
 	drawPlane(SAGITTAL);
@@ -146,11 +139,20 @@ void MainWindow::open()
 	QFileDialog dialog(this, tr("Open File"));
 	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
 	while (dialog.exec() == QDialog::Accepted && !loadImageFile(dialog.selectedFiles().first())) {}
+
+	// if the slab file exists, then load it
+	// future work: optimization (duplication of drawing parts)
+	QFileInfo f(getSlabFileName());
+	if (f.exists() && f.isFile())
+		loadSlab(getSlabFileName());
 }
 
 void MainWindow::loadDicom()
 {
 	findDicomFiles();
+	makeSlab();
+	loadSlab(getSlabFileName());
+
 }
 
 void MainWindow::openSlab() {
@@ -182,8 +184,6 @@ void MainWindow::overlaySlab(int planeType) {
 
 	QImage base = plane[planeType]->pixmap()->toImage();
 	QImage overlay(width, height, QImage::Format_ARGB32);
-	QImage result(width, height, QImage::Format_ARGB32_Premultiplied);
-	QPainter painter(&result);
 
 	QRgb value;
 	float val;
@@ -200,7 +200,10 @@ void MainWindow::overlaySlab(int planeType) {
 			overlay.setPixel(i, height - j, value);
 		}
 	}
+	overlay = overlay.scaled(planeSize, planeSize, Qt::KeepAspectRatio);
 
+	QImage result(base.width(), base.height(), QImage::Format_ARGB32_Premultiplied);
+	QPainter painter(&result);
 	painter.setCompositionMode(QPainter::CompositionMode_Source);
 	painter.fillRect(result.rect(), Qt::transparent);
 	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
@@ -212,6 +215,7 @@ void MainWindow::overlaySlab(int planeType) {
 	painter.fillRect(result.rect(), Qt::white);
 	painter.end();
 
+	result = result.scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 	plane[planeType]->setPixmap(QPixmap::fromImage(result));
 }
 
@@ -220,7 +224,7 @@ void MainWindow::createActions()
 	QMenu *fileMenu = menuBar()->addMenu(tr("File"));
 
 	QAction *openImgAct = fileMenu->addAction(tr("Open Image File"), this, &MainWindow::open);
-	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom File"), this, &MainWindow::loadDicom);
+	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom Files and Create Slab Image"), this, &MainWindow::loadDicom);
 	QAction *overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
 
 	fileMenu->addSeparator();
@@ -316,7 +320,6 @@ void MainWindow::findDicomFiles()
 			it.next();
 
 	}
-	//makeSlab();
 }
 
 void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
@@ -348,23 +351,25 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 		case slabimage: slabvol = imagevol; break;
 	}
 }
-// build error - temporary comment out
 
-vec3df MainWindow::transformation3d(vec3df imagevol, float coordFH, float coordAP, float coordRL, float angleFH, float angleAP, float angleRL)
+//////////////////////////////////
+// not fully implemented yet!!!
+//////////////////////////////////
+vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordFH, float coordRL, float angleAP, float angleFH, float angleRL)
 {
 	const size_t dimX = imagevol.size();
 	const size_t dimY = imagevol[0].size();
 	const size_t dimZ = imagevol[0][0].size();
 
-	Affine3f rotFH = Affine3f(AngleAxisf(deg2rad(angleFH), Vector3f(0, 0, 1)));
-	Affine3f rotAP = Affine3f(AngleAxisf(deg2rad(angleAP), Vector3f(0, 1, 0)));
 	Affine3f rotRL = Affine3f(AngleAxisf(deg2rad(angleRL), Vector3f(-1, 0, 0)));
-
+	Affine3f rotAP = Affine3f(AngleAxisf(deg2rad(angleFH), Vector3f(0, 1, 0)));
+	Affine3f rotFH = Affine3f(AngleAxisf(deg2rad(angleAP), Vector3f(0, 0, 1)));
+	
 	Affine3f r = rotFH * rotAP * rotRL;
 	Affine3f t1(Translation3f(Vector3f(-round(dimX / 2), -round(dimY / 2), -round(dimZ / 2))));
-	Affine3f t2(Translation3f(Vector3f(round(dimX/2), round(dimY/2), round(dimZ/2))));
-	Affine3f t3(Translation3f(Vector3f(coordFH, coordAP, coordRL)));
-	Matrix4f m = (t2 * r * t1).matrix();
+	Affine3f t2(Translation3f(Vector3f(round(dimX / 2), round(dimY / 2), round(dimZ / 2))));
+	Affine3f t3(Translation3f(Vector3f(coordRL, -coordAP, coordFH)));	// uncertain
+	Matrix4f m = (t3 * t2 * r * t1).matrix();
 	Matrix4f m_inv = m.inverse();
 
 	vec3df rotvol;
@@ -465,7 +470,8 @@ void MainWindow::makeSlab()
 	}
 
 	// rotate and translate
-	imagevol = transformation3d(imagevol, 0, 0, 0, 2, 3, -44);
+	DicomInfo diff = MRSI - T1;
+	imagevol = transformation3d(imagevol, diff.coordAP, diff.coordFH, diff.coordRL, diff.angleAP, diff.angleFH, diff.angleRL);
 
 	// slab image (full size)
 	vec3df slab;
@@ -493,9 +499,7 @@ void MainWindow::makeSlab()
 			}
 		}
 	}
-	saveImageFile("slab.nii.gz", img, slab);
-	// for test
-	imgvol = slab;
+	saveImageFile(getSlabFileName().toStdString(), img, slab);
 }
 
 float* MainWindow::arr3Dto1D(NiftiImage *image, vec3df imagevol) {
@@ -514,11 +518,17 @@ float* MainWindow::arr3Dto1D(NiftiImage *image, vec3df imagevol) {
 	return array1D;
 }
 
-bool MainWindow::saveImageFile(const char * filename, NiftiImage *image, vec3df data)
+bool MainWindow::saveImageFile(string filename, NiftiImage *image, vec3df data)
 {
 	NiftiImage temp(*image);
 	temp.open(filename, 'w');
 	temp.writeAllVolumes<float>(arr3Dto1D(image, data));
 
 	return true;
+}
+
+QString MainWindow::getSlabFileName()
+{
+	QFileInfo f(imgFileName);
+	return (f.absolutePath() + "/" + f.baseName() + "_slab." + f.completeSuffix());
 }

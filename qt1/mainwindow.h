@@ -19,10 +19,15 @@
 #define t1image 0
 #define slabimage 1
 
-struct DicomInfo // that naming is not uncertain...
+struct DicomInfo
 {
 	Float32 coordFH, coordAP, coordRL;
 	Float32 angleFH, angleAP, angleRL;
+	DicomInfo& operator-(const DicomInfo& dcminfo) {
+		coordFH -= dcminfo.coordFH; coordAP -= dcminfo.coordAP; coordRL -= dcminfo.coordRL;
+		angleFH -= dcminfo.angleFH; angleAP -= dcminfo.angleAP; angleRL -= dcminfo.angleRL;
+		return *this;
+	}
 };
 typedef vector<vector<vector<float>>> vec3df; // vector - 3d - float
 
@@ -31,6 +36,7 @@ class QLabel;
 class QMenu;
 class QGridLayout;
 class QSpinBox;
+class QFileInfo;
 
 class MainWindow : public QMainWindow
 {
@@ -54,7 +60,9 @@ private:
 	
 	QWidget *mainWidget;
 
+
 	// coronal, sagittal, axial
+	int planeSize = 300;
 	QLabel *plane[3];
 	QLabel *sliceInfoText[3];
 	QSpinBox *sliceSpinBox[3];
@@ -64,11 +72,13 @@ private:
 	QGridLayout *mainLayout;
 	QGridLayout *ctrlLayout;
 	QVBoxLayout *lcmLayout;
+
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
 	vec3df imgvol;
 	void arr1Dto3D(NiftiImage *image, int imageType);
+	QString imgFileName;
 
 	// Intensity
 	void setDefaultIntensity();
@@ -88,13 +98,14 @@ private:
 	NiftiImage *slab = NULL;
 	vec3df slabvol;
 	void overlaySlab(int planeType);
+	QString getSlabFileName();
 
-	// Slab - transformation
+	// Slab - transformation (not fully implemented yet!!!)
 	vec3df transformation3d(vec3df imgvol, float coordFH, float coordAP, float coordRL , float angleFH, float angleAP, float angleRL);
 	float deg2rad(float degree);
 
 	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
-	bool saveImageFile(const char * filename, NiftiImage *image, vec3df data);
+	bool saveImageFile(string filename, NiftiImage *image, vec3df data);
 
 };
 
