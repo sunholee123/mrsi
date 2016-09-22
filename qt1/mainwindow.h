@@ -6,10 +6,11 @@
 #include <QImage>
 #include "NiftiImage.h"
 #include <vector>
-#include <string.h>
 
 #include "dcmtk/config/osconfig.h"
 #include "dcmtk/dcmdata/dctk.h"
+
+#include "Eigen/Eigen"
 
 #define CORONAL 0
 #define SAGITTAL 1
@@ -20,23 +21,22 @@
 
 struct DicomInfo
 {
-	Float32 coordX, coordY, coordZ;
-	Float32 angleX, angleY, angleZ;
+	Float32 coordFH, coordAP, coordRL;
+	Float32 angleFH, angleAP, angleRL;
+	DicomInfo& operator-(const DicomInfo& dcminfo) {
+		coordFH -= dcminfo.coordFH; coordAP -= dcminfo.coordAP; coordRL -= dcminfo.coordRL;
+		angleFH -= dcminfo.angleFH; angleAP -= dcminfo.angleAP; angleRL -= dcminfo.angleRL;
+		return *this;
+	}
 };
-
-struct TableInfo
-{
-	string metaInfo[35][4]; // need to clarify the issue of chemical numbers and variables e.c.g conc, sd, /cr, metaname
-	string fwhm, snr;
-};
-
-typedef struct TableInfo TableInfo_t;
+typedef vector<vector<vector<float>>> vec3df; // vector - 3d - float
 
 class QAction;
 class QLabel;
 class QMenu;
 class QGridLayout;
 class QSpinBox;
+class QFileInfo;
 
 class MainWindow : public QMainWindow
 {
@@ -50,7 +50,6 @@ public:
 	void open();
 	void loadDicom();
 	void openSlab();
-	void openLCM();
 	void valueUpdateCor(int value);
 	void valueUpdateSag(int value);
 	void valueUpdateAxi(int value);
@@ -61,7 +60,9 @@ private:
 	
 	QWidget *mainWidget;
 
+
 	// coronal, sagittal, axial
+	int planeSize = 300;
 	QLabel *plane[3];
 	QLabel *sliceInfoText[3];
 	QSpinBox *sliceSpinBox[3];
@@ -75,14 +76,15 @@ private:
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
-	//float * imgvol = NULL;
-	std::vector<std::vector<std::vector<float>>> imgvol;
-	//void arr1Dto3D(float* array1D);
+	vec3df imgvol;
 	void arr1Dto3D(NiftiImage *image, int imageType);
+	QString imgFileName;
 
-
+	// Intensity
 	void setDefaultIntensity();
 	float intensity;
+
+	// Draw image
 	void drawPlane(int planeType);
 
 	// DICOM
@@ -90,15 +92,23 @@ private:
 	void findDicomFiles();
 
 	// Slab
-	QTextEdit *lcmInfo;
 	bool overlay = false;
 	void makeSlab();
 	bool loadSlab(const QString &);
 	NiftiImage *slab = NULL;
-	std::vector<std::vector<std::vector<float>>> slabvol;
+	vec3df slabvol;
 	void overlaySlab(int planeType);
-	//vector<vector<vector<float>>> rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz);
-	bool loadLCMInfo(QStringList filenames);
+	QString getSlabFileName();
+
+	// Slab - transformation (not fully implemented yet!!!)
+	vec3df transformation3d(vec3df imgvol, float coordFH, float coordAP, float coordRL , float angleFH, float angleAP, float angleRL);
+	float deg2rad(float degree);
+
+	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
+	bool saveImageFile(string filename, NiftiImage *image, vec3df data);
+
 };
+
+
 
 #endif
