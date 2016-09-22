@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+
 MainWindow::MainWindow()
 {
 	// main widget
@@ -50,10 +51,14 @@ MainWindow::MainWindow()
 
 	// LCModel info layout
 	lcmLayout = new QVBoxLayout;
+	lcmInfo = new QTextEdit;
 	QLabel *lcmInfoTitle = new QLabel("<font color='black'>LCModel Info</font>");
+	lcmInfo->setText("This is LCModel Text\n");
+	lcmInfo->setReadOnly(true);
 	lcmInfoTitle->setFixedWidth(500);
 	lcmInfoTitle->setAlignment(Qt::AlignCenter);
 	lcmLayout->addWidget(lcmInfoTitle, 0, 0);
+	lcmLayout->addWidget(lcmInfo, 1, 0);
 	// Chemical info presentation -- need to know number of chemicals
 	mainLayout->addLayout(lcmLayout, 0, 2);	
 }
@@ -159,6 +164,151 @@ void MainWindow::openSlab() {
 	while (dialog.exec() == QDialog::Accepted && !loadSlab(dialog.selectedFiles().first())) {}
 }
 
+TableInfo parseTable(string filename) {
+	char line[255];
+	int printline = 0;
+	TableInfo table;
+
+	std::ifstream myfile(filename);
+	if (myfile.is_open()) {
+		int i = 0;
+		int j = 0;
+		char* token = NULL;
+		char s[] = " \t";
+
+		while (myfile.getline(line, 255)) {
+			switch (printline) {
+			case 0: // do not print or save to the slabinfo
+				break;
+			case 1: // save metainfo
+				j = 0;
+				token = strtok(line, s);
+				while (token != NULL && i < 35) {
+					table.metaInfo[i][j] = token;
+					token = strtok(NULL, s);
+					j++;
+				}
+				i++;
+				break;
+			case 2: // save fwhm, snr
+				j = 0;
+				token = strtok(line, s);
+				while (token != NULL) {
+					if (j == 2) { table.fwhm = token; }
+					else if (j == 6) { table.snr = token; }
+					token = strtok(NULL, s);
+					j++;
+				}
+				break;
+			}
+			if (strstr(line, "Conc.")) { printline = 1; }
+			if (strstr(line, "$$MISC")) { printline = 2; }
+			if (strstr(line, "FWHM")) { printline = 0; }
+		}
+		myfile.close();
+	}
+	return table;
+}
+
+void MainWindow::openLCM() {
+	QFileDialog dialog(this, tr("Open File"));
+	dialog.setNameFilter(tr("LCM table files (*.table)"));
+	dialog.setFileMode(QFileDialog::ExistingFiles);
+	while (dialog.exec() == QDialog::Accepted && !loadLCMInfo(dialog.selectedFiles())){}
+
+}
+
+bool MainWindow::loadLCMInfo(QStringList filepaths) {
+	if (filepaths.isEmpty()) { return false; }
+	else {
+		TableInfo ***tables = new TableInfo**[3];
+		for (int i = 0; i < 3; i++) {
+			tables[i] = new TableInfo*[32];
+			for (int j = 0; j < 32; j++) {
+				tables[i][j] = new TableInfo[32];
+			}
+		}
+
+		for (int i = 0; i < filepaths.count(); i++) {
+			string path = filepaths.at(i).toStdString();
+			string filename = path.substr(path.find_last_of("/\\") + 1);
+			size_t index1 = filename.find("_");
+			size_t index2 = filename.find("-");
+			size_t index3 = filename.find(".");
+			int x = filename.at(index1 - 1) - '0';
+			int y = stoi(filename.substr(index1 + 1, index2 - 1));
+			int z = stoi(filename.substr(index2 + 1, index3 - 1));
+			TableInfo table = parseTable(path);
+			tables[x - 1][y - 1][z - 1] = table;
+		}
+
+		lcmInfo->append("LCM info loaded");
+		/*
+		string metaname = tables[2][31][0].metaInfo[10][3];
+		string metaconc = tables[2][31][0].metaInfo[10][0];
+		string fwhm = tables[2][31][0].fwhm;
+		lcmInfo->append("name: " + QString::fromStdString(metaname));
+		lcmInfo->append("conc: " + QString::fromStdString(metaconc));
+		lcmInfo->append("fwhm: " + QString::fromStdString(fwhm));
+		*/
+
+		return true;
+	}
+	
+	
+	/*
+	char line[255];
+	int printline = 0;
+	TableInfo table;
+
+	std::ifstream myfile("sl1_1-1.table"); // to-do: change to choose directory or multiple files
+	if (myfile.is_open()) {
+		int i = 0;
+		int j = 0;
+		char* token = NULL;
+		char s1[] = " \t";
+		char s2[] = " \t=";
+
+		while (myfile.getline(line,255)) {
+			switch (printline) {
+				case 0: // do not print or save to the slabinfo
+					break; 
+				case 1: // save metainfo
+					lcmInfo->append(QString::fromStdString(line));
+					j = 0;
+					token = strtok(line, s1);
+					while (token != NULL && i < 35) {
+						table.metaInfo[i][j] = token; 
+						token = strtok(NULL, s1);
+						j++;
+					}
+					i++;
+					break;
+				case 2: // save fwhm, snr
+					lcmInfo->append(QString::fromStdString(line));
+					j = 0;
+					token = strtok(line, s1);
+					while (token != NULL) {
+						if (j == 2) { table.fwhm = token; }
+						else if (j == 6) { table.snr = token; }
+						//lcmInfo->append(QString::fromStdString(token));
+						token = strtok(NULL, s1);
+						j++;
+					}
+					break;
+			}
+			if (strstr(line,"Conc.")) { printline = 1; }
+			if (strstr(line,"$$MISC")) { printline = 2; }
+			if (strstr(line, "FWHM")) { printline = 0; }
+		}
+		myfile.close();
+	}
+	else {
+		lcmInfo->append("Unable to open file");
+	}
+	*/
+}
+
 bool MainWindow::loadSlab(const QString &fileName) {
 	string filename = fileName.toStdString();
 	slab = new NiftiImage(filename, 'r');
@@ -222,6 +372,8 @@ void MainWindow::createActions()
 	QAction *openImgAct = fileMenu->addAction(tr("Open Image File"), this, &MainWindow::open);
 	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom File"), this, &MainWindow::loadDicom);
 	QAction *overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
+	QAction *loadLCMInfo = fileMenu->addAction(tr("load LCM Info"), this, &MainWindow::openLCM);
+	//QAction *loadLCMInfo = fileMenu->addAction(tr("load LCM Info"), this, &MainWindow::loadLCMInfo);
 
 	fileMenu->addSeparator();
 	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);

@@ -6,6 +6,7 @@
 #include <QImage>
 #include "NiftiImage.h"
 #include <vector>
+#include <string.h>
 
 #include "dcmtk/config/osconfig.h"
 #include "dcmtk/dcmdata/dctk.h"
@@ -22,6 +23,14 @@ struct DicomInfo
 	Float32 coordX, coordY, coordZ;
 	Float32 angleX, angleY, angleZ;
 };
+
+struct TableInfo
+{
+	string metaInfo[35][4]; // need to clarify the issue of chemical numbers and variables e.c.g conc, sd, /cr, metaname
+	string fwhm, snr;
+};
+
+typedef struct TableInfo TableInfo_t;
 
 class QAction;
 class QLabel;
@@ -41,6 +50,7 @@ public:
 	void open();
 	void loadDicom();
 	void openSlab();
+	void openLCM();
 	void valueUpdateCor(int value);
 	void valueUpdateSag(int value);
 	void valueUpdateAxi(int value);
@@ -61,6 +71,7 @@ private:
 	QGridLayout *mainLayout;
 	QGridLayout *ctrlLayout;
 	QVBoxLayout *lcmLayout;
+
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
@@ -79,15 +90,15 @@ private:
 	void findDicomFiles();
 
 	// Slab
+	QTextEdit *lcmInfo;
 	bool overlay = false;
 	void makeSlab();
 	bool loadSlab(const QString &);
 	NiftiImage *slab = NULL;
 	std::vector<std::vector<std::vector<float>>> slabvol;
 	void overlaySlab(int planeType);
-	vector<vector<vector<float>>> rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz);
+	//vector<vector<vector<float>>> rotation3d(vector<vector<vector<float>>> imgvol, float rx, float ry, float rz);
+	bool loadLCMInfo(QStringList filenames);
 };
-
-
 
 #endif
