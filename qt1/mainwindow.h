@@ -31,6 +31,11 @@ struct DicomInfo
 };
 typedef vector<vector<vector<float>>> vec3df; // vector - 3d - float
 
+struct TableInfo {
+	string metaInfo[35][4];
+	string fwhm, snr;
+};
+
 class QAction;
 class QLabel;
 class QMenu;
@@ -50,6 +55,7 @@ public:
 	void open();
 	void loadDicom();
 	void openSlab();
+	void openLCM();
 	void valueUpdateCor(int value);
 	void valueUpdateSag(int value);
 	void valueUpdateAxi(int value);
@@ -72,6 +78,7 @@ private:
 	QGridLayout *mainLayout;
 	QGridLayout *ctrlLayout;
 	QVBoxLayout *lcmLayout;
+	QTextEdit *lcmInfo;
 
 	// MRI image
 	bool loadImageFile(const QString &);
@@ -106,6 +113,7 @@ private:
 
 	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
 	bool saveImageFile(string filename, NiftiImage *image, vec3df data);
+	bool loadLCMInfo(QStringList filepaths)
 
 };
 
