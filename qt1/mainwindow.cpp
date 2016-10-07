@@ -6,21 +6,24 @@ MainWindow::MainWindow()
 	mainWidget = new QWidget();
 	mainWidget->setBackgroundRole(QPalette::Dark);
 	setCentralWidget(mainWidget);
+	QHBoxLayout *mainLayout = new QHBoxLayout();
+	mainWidget->setLayout(mainLayout);
 
 	for (int i = 0; i < 3; i++)
 	{
 		plane[i] = new QLabel();
 		plane[i]->setFixedWidth(planeSize);
 		plane[i]->setFixedHeight(planeSize);
-		plane[i]->setAlignment(Qt::AlignCenter);
-		plane[i]->setStyleSheet("background-color: black;");
+		plane[i]->setAlignment(Qt::AlignHCenter);
+		//plane[i]->setStyleSheet("background-color: black;");
+		plane[i]->setStyleSheet("background-color: white;");
+		plane[i]->installEventFilter(this);
 	}
 	
-	mainLayout = new QGridLayout;
-	mainWidget->setLayout(mainLayout);
-	mainLayout->addWidget(plane[CORONAL], 0, 0);
-	mainLayout->addWidget(plane[SAGITTAL], 0, 1);
-	mainLayout->addWidget(plane[AXIAL], 1, 0);
+	viewerLayout = new QGridLayout;
+	viewerLayout->addWidget(plane[CORONAL], 0, 0);
+	viewerLayout->addWidget(plane[SAGITTAL], 0, 1);
+	viewerLayout->addWidget(plane[AXIAL], 1, 0);
 	 
 	// spinboxes for controlling slices
 	for (int i = 0; i < 3; i++)
@@ -46,33 +49,35 @@ MainWindow::MainWindow()
 		ctrlLayout->addWidget(sliceSpinBox[i], i, 1);
 		
 	}
-	mainLayout->addLayout(ctrlLayout, 1, 1);
+	viewerLayout->addLayout(ctrlLayout, 1, 1);
 	createActions();
 
 	// LCModel info layout
 	lcmLayout = new QVBoxLayout;
 	lcmInfo = new QTextEdit;
-	QLabel *lcmInfoTitle = new QLabel("<font color='black'>LCModel Info</font>");
-	lcmInfo->setText("This is LCModel Text\n");
+	QLabel *lcmInfoTitle = new QLabel("<font color='black'>MRSI Chemical Information</font>");
+	//lcmInfo->setText("This is LCModel Text\n");
 	lcmInfo->setReadOnly(true);
-	lcmInfoTitle->setFixedWidth(500);
+	lcmInfo->setFixedHeight(600);
+	lcmInfoTitle->setFixedWidth(planeSize);
 	lcmInfoTitle->setAlignment(Qt::AlignCenter);
 	lcmLayout->addWidget(lcmInfoTitle, 0, 0);
 	lcmLayout->addWidget(lcmInfo, 1, 0);
-	// Chemical info presentation -- need to know number of chemicals
-	mainLayout->addLayout(lcmLayout, 0, 2);	
 
-	// for test
-//	QString q = "INK0004.nii.gz";
-//	loadImageFile(q);
+	mainLayout->addLayout(viewerLayout);
+	mainLayout->addLayout(lcmLayout);
 }
 
 MainWindow::~MainWindow()
 {
 	if(img != NULL)
 		delete img;
+	if (slab != NULL)
+		delete slab;
 	if (!imgvol.empty())
 		imgvol = vec3df();
+	if (!slabvol.empty())
+		slabvol = vec3df();
 }
 
 void MainWindow::setDefaultIntensity()
@@ -91,6 +96,7 @@ void MainWindow::setDefaultIntensity()
 }
 
 void MainWindow::drawPlane(int planeType){
+	/*
 	int width, height;
 	switch(planeType){
 		case CORONAL:	width = img->nx();	height = img->nz();	break;
@@ -113,14 +119,97 @@ void MainWindow::drawPlane(int planeType){
 			value = qRgb(val, val, val);
 			slice.setPixel(i, height-j, value);
 		}
-	slice = slice.scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-	plane[planeType]->setPixmap(QPixmap::fromImage(slice));
+	*/
 
+	initImages(planeType, t1image);
+	
+	if (overlay == true) {initImages(planeType, slabimage); }
+	else { plane[planeType]->setPixmap(QPixmap::fromImage(T1Images[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation))); }
+
+	if (voxelPick == true) { changeVoxelValues(selectedVoxel, true); }
+	else { changeVoxelValues(selectedVoxel, false); selectedVoxel = -1; }
+
+	overlayImage(T1Images[planeType], slabImages[planeType], planeType);
+}
+
+void MainWindow::overlayImage(QImage base, QImage overlay, int planeType) {
+	QImage result(base.width(), base.height(), QImage::Format_ARGB32_Premultiplied);
+	QPainter painter(&result);
+
+	painter.setCompositionMode(QPainter::CompositionMode_Source);
+	painter.fillRect(result.rect(), Qt::transparent);
+	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+	painter.drawImage(0, 0, base);
+	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+	painter.setOpacity(0.5);
+	painter.drawImage(0, 0, overlay);
+	painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+	painter.fillRect(result.rect(), Qt::white);
+	painter.end();
+
+	result = result.scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+	plane[planeType]->setPixmap(QPixmap::fromImage(result));
+}
+
+void MainWindow::initImages(int planeType, int imageType) {
+	QRgb value;
+	int width, height;
+	float val;
+
+	if (imageType == t1image) {
+		switch (planeType) {
+		case CORONAL: width = img->nx(); height = img->nz(); break;
+		case SAGITTAL: width = img->ny(); height = img->nz(); break;
+		case AXIAL:	width = img->nx(); height = img->ny(); break;
+		}
+	
+		T1Images[planeType] = QImage(width, height, QImage::Format_RGB32);
+		T1Images[planeType].fill(qRgb(0, 0, 0));
+		 
+		for (int i = 0; i < width; i++) {
+			for (int j = 0; j < height; j++) {
+				switch (planeType) {
+				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
+				}
+				value = qRgb(val*intensity, val*intensity, val*intensity);
+				T1Images[planeType].setPixel(i, height - j, value);
+			}
+		}
+	}
+	else {
+		switch (planeType) {
+		case CORONAL: width = slab->nx(); height = slab->nz(); break;
+		case SAGITTAL: width = slab->ny(); height = slab->nz(); break;
+		case AXIAL:	width = slab->nx(); height = slab->ny(); break;
+		}
+
+		slabImages[planeType] = QImage(width, height, QImage::Format_ARGB32);
+		slabImages[planeType].fill(qRgba(0, 0, 0, 255));
+
+		for (int i = 0; i < width; i++) {
+			for (int j = 0; j < height; j++) {
+				switch (planeType) {
+				case CORONAL: val = slabvol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = slabvol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = slabvol[i][j][sliceNum[planeType]]; break;
+				}
+				if (val == -1) { value = qRgba(0, 0, 0, 0); }
+				else if (val == 1495) {value = qRgba(val*intensity, 0, val*intensity, 255); }
+				else { value = qRgba(val*intensity, val*intensity, 0, 255);}
+				slabImages[planeType].setPixel(i, height - j, value);
+			}
+		}
+	}
 }
 
 bool MainWindow::loadImageFile(const QString &fileName)
 {
 	// load mri image
+	if (overlay == true) { overlay = false; delete slab; }
+	if (img != NULL) { delete img; }
+
 	imgFileName = fileName;
 	string filename = fileName.toStdString();
 	img = new NiftiImage(filename, 'r');
@@ -237,14 +326,14 @@ bool MainWindow::loadLCMInfo(QStringList filepaths) {
 			size_t index1 = filename.find("_");
 			size_t index2 = filename.find("-");
 			size_t index3 = filename.find(".");
-			int x = filename.at(index1 - 1) - '0';
-			int y = stoi(filename.substr(index1 + 1, index2 - 1));
-			int z = stoi(filename.substr(index2 + 1, index3 - 1));
+			int x = filename.at(index1-1) - '0';
+			int y = stoi(filename.substr(index1+1, index2-1));
+			int z = stoi(filename.substr(index2+1, index3-1));
 			TableInfo table = parseTable(path);
-			tables[x - 1][y - 1][z - 1] = table;
+			tables[x-1][y-1][z-1] = table;
 		}
 
-		lcmInfo->append("LCM info loaded");
+		// lcmInfo->append("LCM info loaded");
 		/*
 		string metaname = tables[2][31][0].metaInfo[10][3];
 		string metaconc = tables[2][31][0].metaInfo[10][0];
@@ -254,119 +343,40 @@ bool MainWindow::loadLCMInfo(QStringList filepaths) {
 		lcmInfo->append("fwhm: " + QString::fromStdString(fwhm));
 		*/
 
+		// voxel picking-like presentation
+		QString info_str;
+		info_str.append("<qt><style>.mytable{ border-collapse:collapse; }");
+		info_str.append(".mytable th, .mytable td { border:5px solid black; }</style>");
+		info_str.append("<table class=\"mytable\"><tr><th>Metabolite</th><th>Conc.</th><th>%SD</th><th>/Cr</th></tr>");
+		for (int i = 0; i < 35; i++) {
+			string s1 = "<tr><td>"+tables[1][13][22].metaInfo[i][3]+"</td>";
+			string s2 = "<td>" + tables[1][13][22].metaInfo[i][0] + "</td>";
+			string s3 = "<td>" + tables[1][13][22].metaInfo[i][1] + "</td>";
+			string s4 = "<td>" + tables[1][13][22].metaInfo[i][2] + "</td></tr>";
+			info_str.append(QString::fromStdString(s1+s2+s3+s4));
+		}
+		info_str.append("</table></qt>");
+		lcmInfo->setText(info_str);
+		lcmInfo->append("\n\nFWHM: "+ QString::fromStdString(tables[1][13][22].fwhm));
+		lcmInfo->append("SNR: " + QString::fromStdString(tables[1][13][22].snr));
+
 		return true;
 	}
-	
-	
-	/*
-	char line[255];
-	int printline = 0;
-	TableInfo table;
-
-	std::ifstream myfile("sl1_1-1.table"); // to-do: change to choose directory or multiple files
-	if (myfile.is_open()) {
-		int i = 0;
-		int j = 0;
-		char* token = NULL;
-		char s1[] = " \t";
-		char s2[] = " \t=";
-
-		while (myfile.getline(line,255)) {
-			switch (printline) {
-				case 0: // do not print or save to the slabinfo
-					break; 
-				case 1: // save metainfo
-					lcmInfo->append(QString::fromStdString(line));
-					j = 0;
-					token = strtok(line, s1);
-					while (token != NULL && i < 35) {
-						table.metaInfo[i][j] = token; 
-						token = strtok(NULL, s1);
-						j++;
-					}
-					i++;
-					break;
-				case 2: // save fwhm, snr
-					lcmInfo->append(QString::fromStdString(line));
-					j = 0;
-					token = strtok(line, s1);
-					while (token != NULL) {
-						if (j == 2) { table.fwhm = token; }
-						else if (j == 6) { table.snr = token; }
-						//lcmInfo->append(QString::fromStdString(token));
-						token = strtok(NULL, s1);
-						j++;
-					}
-					break;
-			}
-			if (strstr(line,"Conc.")) { printline = 1; }
-			if (strstr(line,"$$MISC")) { printline = 2; }
-			if (strstr(line, "FWHM")) { printline = 0; }
-		}
-		myfile.close();
-	}
-	else {
-		lcmInfo->append("Unable to open file");
-	}
-	*/
 }
 
 bool MainWindow::loadSlab(const QString &fileName) {
+	if (slab != NULL) { delete slab; }
+
 	string filename = fileName.toStdString();
 	slab = new NiftiImage(filename, 'r');
 	arr1Dto3D(slab, slabimage);
-
-	overlaySlab(SAGITTAL);
-	overlaySlab(AXIAL);
-	overlaySlab(CORONAL);
-	overlay = true;
+	
+	if (overlay == false) { overlay = true; }
+	drawPlane(CORONAL);
+	drawPlane(SAGITTAL);
+	drawPlane(AXIAL);
 
 	return true;
-}
-
-void MainWindow::overlaySlab(int planeType) {
-	int width, height;
-	switch (planeType) {
-	case CORONAL:	width = slab->nx();	height = slab->nz();	break;
-	case SAGITTAL:	width = slab->ny();	height = slab->nz();	break;
-	case AXIAL:		width = slab->nx();	height = slab->ny();	break;
-	}
-
-	QImage base = plane[planeType]->pixmap()->toImage();
-	QImage overlay(width, height, QImage::Format_ARGB32);
-
-	QRgb value;
-	float val;
-	for (int i = 0; i < width; i++) {
-		for (int j = 0; j < height; j++)
-		{
-			switch (planeType) {
-			case CORONAL: val = slabvol[i][sliceNum[planeType]][j]; break;
-			case SAGITTAL: val = slabvol[sliceNum[planeType]][i][j]; break;
-			case AXIAL: val = slabvol[i][j][sliceNum[planeType]]; break;
-			}
-			if (val == -1) { value = qRgba(0, 0, 0, 0); }
-			else { value = qRgba(val*intensity, val*intensity, 0, 255); }
-			overlay.setPixel(i, height - j, value);
-		}
-	}
-	overlay = overlay.scaled(planeSize, planeSize, Qt::KeepAspectRatio);
-
-	QImage result(base.width(), base.height(), QImage::Format_ARGB32_Premultiplied);
-	QPainter painter(&result);
-	painter.setCompositionMode(QPainter::CompositionMode_Source);
-	painter.fillRect(result.rect(), Qt::transparent);
-	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
-	painter.drawImage(0, 0, base);
-	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
-	painter.setOpacity(0.5);
-	painter.drawImage(0, 0, overlay);
-	painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
-	painter.fillRect(result.rect(), Qt::white);
-	painter.end();
-
-	result = result.scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-	plane[planeType]->setPixmap(QPixmap::fromImage(result));
 }
 
 void MainWindow::createActions()
@@ -377,7 +387,6 @@ void MainWindow::createActions()
 	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom Files and Create Slab Image"), this, &MainWindow::loadDicom);
 	QAction *overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
 	QAction *loadLCMInfo = fileMenu->addAction(tr("load LCM Info"), this, &MainWindow::openLCM);
-	//QAction *loadLCMInfo = fileMenu->addAction(tr("load LCM Info"), this, &MainWindow::loadLCMInfo);
 
 	fileMenu->addSeparator();
 	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
@@ -402,19 +411,16 @@ void MainWindow::valueUpdateCor(int value)
 {
 	sliceNum[CORONAL] = value - 1;
 	drawPlane(CORONAL);
-	if (overlay == true) { overlaySlab(CORONAL); }
 }
 void MainWindow::valueUpdateSag(int value)
 {
 	sliceNum[SAGITTAL] = value - 1;
 	drawPlane(SAGITTAL);
-	if (overlay == true) { overlaySlab(SAGITTAL); }
 }
 void MainWindow::valueUpdateAxi(int value)
 {
 	sliceNum[AXIAL] = value - 1;
 	drawPlane(AXIAL);
-	if (overlay == true) { overlaySlab(AXIAL); }
 }
 
 void MainWindow::findDicomFiles()
@@ -502,6 +508,193 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 		case t1image: imgvol = imagevol; break;
 		case slabimage: slabvol = imagevol; break;
 	}
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *e) {
+	if (e->type() == QEvent::MouseButtonPress) {
+		QMouseEvent *event = (QMouseEvent*) e;
+
+		if (event->button() == Qt::LeftButton) {
+			if (overlay == true) { // get mouse event only when slab overlayed
+				if ((QLabel*)watched == plane[CORONAL] || (QLabel*)watched == plane[SAGITTAL] || (QLabel*)watched == plane[AXIAL]) { // and mouse event occured in plane
+					int x = event->x();
+					int y = event->y();
+					int planeType;
+					float val;
+
+					if ((QLabel*)watched == plane[CORONAL]) { planeType = CORONAL; }
+					else if ((QLabel*)watched == plane[SAGITTAL]) { planeType = SAGITTAL; }
+					else { planeType = AXIAL; }
+
+					int width1 = slabImages[planeType].width();
+					int height1 = slabImages[planeType].height();
+					int width2 = slabImages[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation).width();
+					int height2 = slabImages[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation).height();
+					int margin1 = 0;
+					int margin2 = 0;
+
+					if (width2 < planeSize) { margin1 = (planeSize - width2) / 2; }
+					if (height2 < planeSize) { margin2 = (planeSize - height2) / 2; }
+
+					val = getSlabVoxelValue((x - margin1)*width1 / width2, (y - margin2)*height1 / height2, planeType);
+
+					if (selectedVoxel == val) { voxelPick = false; }
+					else if (val != -1) { selectedVoxel = val; voxelPick = true; }
+				}
+				/*
+				else if ((QLabel*)watched == plane[SAGITTAL]) {
+					int width1 = slabImages[SAGITTAL].width();
+					int height1 = slabImages[SAGITTAL].height();
+					int width2 = slabImages[SAGITTAL].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation).width();
+					int height2 = slabImages[SAGITTAL].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation).height();
+
+					string s1 = "voxel picked(300*300): " + std::to_string(x) + ", " + std::to_string(y);
+					string s2 = "voxel picked(220*220): " + std::to_string(x * 11 / 15) + ", " + std::to_string(y * 11 / 15);
+					string s3 = "voxel calculated(220*220): " + std::to_string(x*width1 / width2) + ", " + std::to_string(y * height1 / height2);
+
+					lcmInfo->append(QString::fromStdString(s1));
+					lcmInfo->append(QString::fromStdString(s2));
+					lcmInfo->append(QString::fromStdString(s3));
+
+					changeVoxelValues(x*width1 / width2, y * height1 / height2, SAGITTAL);
+					voxelPick = true;
+				}
+				else if ((QLabel*)watched == plane[AXIAL]) {
+					// plane image : slab image ratio calculation required
+					int width1 = slabImages[AXIAL].width();
+					int height1 = slabImages[CORONAL].height();
+					int width2 = slabImages[CORONAL].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation).width();
+					int height2 = slabImages[CORONAL].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation).height();
+					int margin1 = 0;
+					int margin2 = 0;
+
+					if (width2 < planeSize) { margin1 = (planeSize - width2) / 2; }
+					if (height2 < planeSize) { margin2 = (planeSize - height2) / 2; }
+
+					string s1 = "voxel picked(245*300): " + std::to_string(x) + ", " + std::to_string(y);
+					string s2 = "voxel picked(180*220): " + std::to_string((x - 27) * 36 / 49) + ", " + std::to_string(y * 11 / 15);
+					string s3 = "voxel calculated(180*220): " + std::to_string((x - margin1)*width1 / width2) + ", " + std::to_string((y - margin2) * height1 / height2);
+
+					lcmInfo->append(QString::fromStdString(s1));
+					lcmInfo->append(QString::fromStdString(s2));
+					lcmInfo->append(QString::fromStdString(s3));
+
+					changeVoxelValues((x - 27)*width1 / width2, y * height1 / height2, CORONAL);
+					voxelPick = true;
+				}
+				*/
+			}			
+		}
+	}
+	else if (e->type() == QEvent::MouseButtonRelease) {
+		if (overlay == true) { // get mouse event only when slab overlayed
+			if ((QLabel*)watched == plane[CORONAL] || (QLabel*)watched == plane[SAGITTAL] || (QLabel*)watched == plane[AXIAL]) { // and mouse event occured in plane
+				drawPlane(CORONAL);
+				drawPlane(SAGITTAL);
+				drawPlane(AXIAL);
+			}
+		}
+	}
+	return false;
+}
+
+float MainWindow::getSlabVoxelValue(int x, int y, int planeType) {
+	int width = slabImages[planeType].width();
+	int height = slabImages[planeType].height();
+	float val;
+
+	switch (planeType) {
+	case CORONAL: val = slabvol[x][sliceNum[planeType]][height - y];  break;
+	case SAGITTAL: val = slabvol[sliceNum[planeType]][x][height - y]; break;
+	case AXIAL: val = slabvol[x][height - y][sliceNum[planeType]]; break;
+	}
+
+	// print for debugging
+	string s = "slabvol: " + std::to_string(val);
+	lcmInfo->append(QString::fromStdString(s));
+
+	return val;
+}
+
+/*
+void MainWindow::changeVoxelValues(int x, int y, int planeType) {
+	int width = slabImages[planeType].width();
+	int height = slabImages[planeType].height();
+	float val, temp;
+
+	switch (planeType) {
+		case CORONAL: val = slabvol[x][sliceNum[planeType]][height-y];  break;
+		case SAGITTAL: val = slabvol[sliceNum[planeType]][x][height-y]; break;
+		case AXIAL: val = slabvol[x][height-y][sliceNum[planeType]]; break;
+	}
+
+	// print for debugging
+	string s = "slabvol: " + std::to_string(val);
+	lcmInfo->append(QString::fromStdString(s));
+
+	if (val != -1) {// change value only for slab voxel
+		for (int p = 0; p < 3; p++) { // update voxel value for every plane
+			for (int i = 0; i < slabImages[p].width(); i++) {
+				for (int j = 0; j < slabImages[p].height(); j++) {
+					if (p == CORONAL) { temp = slabvol[i][sliceNum[p]][j]; }
+					else if (p == SAGITTAL) { temp = slabvol[sliceNum[p]][i][j]; }
+					else if (p == AXIAL) { temp = slabvol[i][j][sliceNum[p]]; }
+
+					if (temp == val) { slabImages[p].setPixelColor(i, height - j, qRgba(temp*intensity, 0, 0, 255)); }
+				}
+			}
+		}
+	}
+
+
+	/* change voxel values by color -- epic fail
+	if (color.rgb() != qRgb(0, 0, 0)) { // change value for only slab voxel
+		for (int p = 0; p < 3; p++) { // update voxel value for every plane
+			int width = slabImages[p].width();
+			int height = slabImages[p].height();
+
+			if (p == 0) { lcmInfo->append("plane CORONAL"); }
+			else if (p == 1) { lcmInfo->append("plane SAGITTAL"); }
+			else { lcmInfo->append("plane AXIAL"); }			
+
+			
+			for (int i = 0; i < width; i++) {
+				for (int j = 0; j < height; j++) {
+					QColor temp = slabImages[p].pixelColor(i, j);
+					if (temp.redF() == color.redF()) {
+						string s1 = "picked voxel: " + std::to_string(color.redF()) + ", " + std::to_string(color.greenF()) + ", " + std::to_string(color.blueF());
+						string s2 = "changed voxel("+std::to_string(i)+","+std::to_string(j)+"): " + std::to_string(temp.redF()) + ", " + std::to_string(temp.greenF()) + ", " + std::to_string(temp.blueF());
+						//lcmInfo->append(QString::fromStdString(s1));
+						//lcmInfo->append(QString::fromStdString(s2));
+						
+						temp.setRgbF(temp.redF(), 0.0, 0.0, 1.0);
+						slabImages[p].setPixelColor(i, j, temp);
+					}
+				}
+			}
+		}
+	}
+}*/
+
+void MainWindow::changeVoxelValues(float value, bool on) {
+	if (value != -1) { // change value only for slab voxel
+		float temp;
+
+		for (int p = 0; p < 3; p++) { // update voxel value for every plane
+			for (int i = 0; i < slabImages[p].width(); i++) {
+				for (int j = 0; j < slabImages[p].height(); j++) {
+					if (p == CORONAL) { temp = slabvol[i][sliceNum[p]][j]; }
+					else if (p == SAGITTAL) { temp = slabvol[sliceNum[p]][i][j]; }
+					else if (p == AXIAL) { temp = slabvol[i][j][sliceNum[p]]; }
+
+					if (temp == value) {
+						if (on == true) { slabImages[p].setPixelColor(i, slabImages[p].height() - j, qRgba(temp*intensity, 0, 0, 255)); }
+						else { slabImages[p].setPixelColor(i, slabImages[p].height() - j, qRgba(temp*intensity, temp*intensity, 0, 255)); }
+					}
+				}
+			}
+		}
+	}		
 }
 
 //////////////////////////////////

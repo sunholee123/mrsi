@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QtWidgets>
 #include <QImage>
+#include <QMouseEvent>
 #include "NiftiImage.h"
 #include <vector>
 
@@ -75,7 +76,7 @@ private:
 	int sliceNum[3]; // coronal, sagittal, axial slice
 	void setSliceNum();
 
-	QGridLayout *mainLayout;
+	QGridLayout *viewerLayout;
 	QGridLayout *ctrlLayout;
 	QVBoxLayout *lcmLayout;
 	QTextEdit *lcmInfo;
@@ -83,6 +84,7 @@ private:
 	// MRI image
 	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
+	QImage T1Images[3];
 	vec3df imgvol;
 	void arr1Dto3D(NiftiImage *image, int imageType);
 	QString imgFileName;
@@ -93,6 +95,9 @@ private:
 
 	// Draw image
 	void drawPlane(int planeType);
+	void overlayImage(QImage base, QImage overlay, int planeType);
+	void initImages(int planeType, int imageType);
+	void updateImages(int planeType, int imageType);
 
 	// DICOM
 	DicomInfo T1, MRSI;
@@ -103,8 +108,8 @@ private:
 	void makeSlab();
 	bool loadSlab(const QString &);
 	NiftiImage *slab = NULL;
+	QImage slabImages[3];
 	vec3df slabvol;
-	void overlaySlab(int planeType);
 	QString getSlabFileName();
 
 	// Slab - transformation (not fully implemented yet!!!)
@@ -113,10 +118,14 @@ private:
 
 	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
 	bool saveImageFile(string filename, NiftiImage *image, vec3df data);
-	bool loadLCMInfo(QStringList filepaths)
+	bool loadLCMInfo(QStringList filepaths);
 
+	bool eventFilter(QObject *watched, QEvent *e);
+	bool voxelPick = false;
+	float getSlabVoxelValue(int x, int y, int planeType);
+	//void changeVoxelValues(int x, int y, int planeType);
+	void changeVoxelValues(float value, bool on);
+	float selectedVoxel = -1;
 };
-
-
 
 #endif
