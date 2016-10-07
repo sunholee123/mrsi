@@ -63,53 +63,65 @@ public:
 
 
 private:
-	void createActions();
-	
 	QWidget *mainWidget;
-
-
-	// coronal, sagittal, axial
 	int planeSize = 300;
 	QLabel *plane[3];
 	QLabel *sliceInfoText[3];
 	QSpinBox *sliceSpinBox[3];
 	int sliceNum[3]; // coronal, sagittal, axial slice
-	void setSliceNum();
-
 	QGridLayout *viewerLayout;
 	QGridLayout *ctrlLayout;
 	QVBoxLayout *lcmLayout;
 	QTextEdit *lcmInfo;
-
+	
+	void createActions();
+	
 	// MRI image
-	bool loadImageFile(const QString &);
 	NiftiImage *img = NULL;
-	QImage T1Images[3];
 	vec3df imgvol;
-	void arr1Dto3D(NiftiImage *image, int imageType);
+	QImage T1Images[3];
 	QString imgFileName;
-
-	// Intensity
-	void setDefaultIntensity();
 	float intensity;
 
-	// Draw image
-	void drawPlane(int planeType);
-	void overlayImage(QImage base, QImage overlay, int planeType);
-	void initImages(int planeType, int imageType);
-	void updateImages(int planeType, int imageType);
+	bool loadImageFile(const QString &);
+	void setDefaultIntensity();
+	void setSliceNum();
+	void arr1Dto3D(NiftiImage *image, int imageType);
 
-	// DICOM
+	// DICOM image
 	DicomInfo T1, MRSI;
 	void findDicomFiles();
 
-	// Slab
-	bool overlay = false;
-	void makeSlab();
-	bool loadSlab(const QString &);
+	// Slab image
 	NiftiImage *slab = NULL;
 	QImage slabImages[3];
 	vec3df slabvol;
+
+	bool loadSlab(const QString &);
+
+	// LCM info
+	TableInfo ***tables = NULL;
+
+	bool loadLCMInfo(QStringList filepaths);
+	void presentLCMInfo();
+
+	// Draw and update planes
+	bool overlay = false;
+	bool voxelPick = false;
+	float selectedVoxel = -1;
+
+	void drawPlane(int planeType);
+	void overlayImage(QImage base, QImage overlay, int planeType);
+	void initImages(int planeType, int imageType);
+
+	// Slab - voxel picking (single voxle selection yet)
+	bool eventFilter(QObject *watched, QEvent *e);
+	float getSlabVoxelValue(int x, int y, int planeType);
+	void changeVoxelValues(float value, bool on);
+
+
+	// Slab
+	void makeSlab();
 	QString getSlabFileName();
 
 	// Slab - transformation (not fully implemented yet!!!)
@@ -117,15 +129,7 @@ private:
 	float deg2rad(float degree);
 
 	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
-	bool saveImageFile(string filename, NiftiImage *image, vec3df data);
-	bool loadLCMInfo(QStringList filepaths);
-
-	bool eventFilter(QObject *watched, QEvent *e);
-	bool voxelPick = false;
-	float getSlabVoxelValue(int x, int y, int planeType);
-	//void changeVoxelValues(int x, int y, int planeType);
-	void changeVoxelValues(float value, bool on);
-	float selectedVoxel = -1;
+	bool saveImageFile(string filename, NiftiImage *image, vec3df data);	
 };
 
 #endif
