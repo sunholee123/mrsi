@@ -84,14 +84,18 @@ MainWindow::~MainWindow()
 void MainWindow::createActions()
 {
 	QMenu *fileMenu = menuBar()->addMenu(tr("File"));
+	QMenu *statsMenu = menuBar()->addMenu(tr("Statistics"));
 
 	QAction *openImgAct = fileMenu->addAction(tr("Open Image File"), this, &MainWindow::open);
 	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom Files and Create Slab Image"), this, &MainWindow::loadDicom);
+	QAction *loadLCMInfo = fileMenu->addAction(tr("Load LCM Info"), this, &MainWindow::openLCM);
 	QAction *overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
-	QAction *loadLCMInfo = fileMenu->addAction(tr("load LCM Info"), this, &MainWindow::openLCM);
+	QAction *openSlabMask = fileMenu->addAction(tr("Overlay Slab Mask"), this, &MainWindow::openSlabMask);
+	QAction *makeSlabMask = statsMenu->addAction(tr("Create Slab Mask"), this, &MainWindow::makeSlabMask);
+	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
 
 	fileMenu->addSeparator();
-	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
+	statsMenu->addSeparator();
 }
 
 void MainWindow::open()
@@ -126,6 +130,51 @@ void MainWindow::openLCM() {
 	dialog.setNameFilter(tr("LCM table files (*.table)"));
 	dialog.setFileMode(QFileDialog::ExistingFiles);
 	while (dialog.exec() == QDialog::Accepted && !loadLCMInfo(dialog.selectedFiles())) {}
+}
+
+void MainWindow::openSlabMask() {
+	QFileDialog dialog(this, tr("Open File"));
+	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
+	while (dialog.exec() == QDialog::Accepted && !loadSlabMask(dialog.selectedFiles().first())) {}
+}
+
+void MainWindow::makeSlabMask() {
+	QDialog dialog(this);
+	QFormLayout form(&dialog);
+
+	form.addRow(new QLabel("<center>Values for Quality Check</center>"));
+
+	QComboBox *metabolites = new QComboBox();
+	metabolites->addItems(metaList);
+	form.addRow("Metabolite", metabolites);
+
+	QLineEdit *sdInput = new QLineEdit(&dialog);
+	sdInput->setValidator(new QIntValidator(0, 100, this));
+	form.addRow("SD(%)", sdInput);
+
+	QLineEdit *fwhmInput = new QLineEdit(&dialog);
+	fwhmInput->setValidator(new QDoubleValidator(0, 10, 2, this));
+	form.addRow("FWHM", fwhmInput);
+
+	QLineEdit *snrInput = new QLineEdit(&dialog);
+	snrInput->setValidator(new QIntValidator(0, 10, this));
+	form.addRow("SNR(optional)", snrInput);
+
+	QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, &dialog);
+	form.addRow(&buttonBox);
+	QObject::connect(&buttonBox, SIGNAL(accepted()), &dialog, SLOT(accept()));
+	QObject::connect(&buttonBox, SIGNAL(rejected()), &dialog, SLOT(reject()));
+
+	if (dialog.exec() == QDialog::Accepted) {
+		string metabolite = metabolites->currentText().toStdString();
+		int sd = sdInput->text().toInt();
+		float fwhm = fwhmInput->text().toFloat();
+		int snr = -1;
+		if (!snrInput->text().isEmpty()) { snr = snrInput->text().toInt(); }
+
+		voxelQualityCheck(metabolite, sd, fwhm, snr);
+		saveSlabMask(metabolite);
+	}
 }
 
 /***** load MRI image *****/
@@ -210,6 +259,7 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 	switch (imageType) {
 	case t1image: imgvol = imagevol; break;
 	case slabimage: slabvol = imagevol; break;
+	case maskimage: maskvol = imagevol; break;
 	}
 }
 
@@ -288,51 +338,6 @@ bool MainWindow::loadSlab(const QString &fileName) {
 }
 
 /***** load LCM info *****/
-TableInfo parseTable(string filename) {
-	char line[255];
-	int printline = 0;
-	TableInfo table;
-
-	std::ifstream myfile(filename);
-	if (myfile.is_open()) {
-		int i = 0;
-		int j = 0;
-		char* token = NULL;
-		char s[] = " \t";
-
-		while (myfile.getline(line, 255)) {
-			switch (printline) {
-			case 0: // do not print or save to the slabinfo
-				break;
-			case 1: // save metainfo
-				j = 0;
-				token = strtok(line, s);
-				while (token != NULL && i < 35) {
-					table.metaInfo[i][j] = token;
-					token = strtok(NULL, s);
-					j++;
-				}
-				i++;
-				break;
-			case 2: // save fwhm, snr
-				j = 0;
-				token = strtok(line, s);
-				while (token != NULL) {
-					if (j == 2) { table.fwhm = token; }
-					else if (j == 6) { table.snr = token; }
-					token = strtok(NULL, s);
-					j++;
-				}
-				break;
-			}
-			if (strstr(line, "Conc.")) { printline = 1; }
-			if (strstr(line, "$$MISC")) { printline = 2; }
-			if (strstr(line, "FWHM")) { printline = 0; }
-		}
-		myfile.close();
-	}
-	return table;
-}
 
 bool MainWindow::loadLCMInfo(QStringList filepaths) {
 	if (filepaths.isEmpty()) { return false; }
@@ -363,30 +368,101 @@ bool MainWindow::loadLCMInfo(QStringList filepaths) {
 	}
 }
 
+TableInfo MainWindow::parseTable(string filename) {
+	char line[255];
+	int printline = 0;
+	TableInfo table;
+
+	std::ifstream myfile(filename);
+	if (myfile.is_open()) {
+		int i = 0;
+		int j = 0;
+		char* token = NULL;
+		char s[] = " \t";
+
+		while (myfile.getline(line, 255)) {
+			switch (printline) {
+			case 0: // do not print or save to the slabinfo
+				break;
+			case 1: { // save metainfo
+				j = 0;
+				token = strtok(line, s);
+				Metabolite metainfo;
+				while (token != NULL && i < 35) {
+					if (j == 0) { metainfo.conc = stof(token); }
+					else if (j == 1) { metainfo.sd = stoi(token); }
+					else if (j == 2) { metainfo.ratio = stof(token); }
+					else if (j == 3) {
+						metainfo.name = token;
+						metainfo.qc = true;
+						table.metaInfo[metainfo.name] = metainfo;
+						if (metaList.empty() || !metaList.contains(QString::fromStdString(metainfo.name))) { // To-do: call routine just once 
+							metaList.push_back(QString::fromStdString(metainfo.name));
+						}
+					}
+					//table.metaInfo[i][j] = token;
+					token = strtok(NULL, s);
+					j++;
+				}
+				i++;
+				break;
+			}
+			case 2: // save fwhm, snr
+				j = 0;
+				token = strtok(line, s);
+				while (token != NULL) {
+					if (j == 2) { table.fwhm = stof(token); }
+					else if (j == 6) { table.snr = stoi(token); }
+					token = strtok(NULL, s);
+					j++;
+				}
+				break;
+			}
+			if (strstr(line, "Conc.")) { printline = 1; }
+			if (strstr(line, "$$MISC")) { printline = 2; }
+			if (strstr(line, "FWHM")) { printline = 0; }
+		}
+		myfile.close();
+	}
+	return table;
+}
+
 void MainWindow::presentLCMInfo() {
 	int a, b, c;
 	QString info_str;
+	map<string, Metabolite>::iterator metaPos;
 
-	if (selectedVoxel > 2048) { a = 3; b = (selectedVoxel-2048) / 32; c = fmod((selectedVoxel-2048), 32);}
-	else if (selectedVoxel > 1024) { a = 2; b = (selectedVoxel - 1024) / 32; c = fmod((selectedVoxel-1024), 32); }
-	else { a = 1; b = selectedVoxel / 32; c = fmod(selectedVoxel, 32); }
-
+	a = (selectedVoxel - 1) / 1024;
+	b = fmod((selectedVoxel - 1), 1024) / 32;
+	c = fmod(fmod((selectedVoxel - 1), 1024), 32);
+	
+	TableInfo temp = tables[a][b][c];
+	
 	info_str.append("<qt><style>.mytable{ border-collapse:collapse; }");
 	info_str.append(".mytable th, .mytable td { border:5px solid black; }</style>");
 	info_str.append("<table class=\"mytable\"><tr><th>Metabolite</th><th>Conc.</th><th>%SD</th><th>/Cr</th></tr>");
-	for (int i = 0; i < 35; i++) {
-		string s1 = "<tr><td>" + tables[a-1][b-1][c-1].metaInfo[i][3] + "</td>";
-		string s2 = "<td>" + tables[a-1][b-1][c-1].metaInfo[i][0] + "</td>";
-		string s3 = "<td>" + tables[a-1][b-1][c-1].metaInfo[i][1] + "</td>";
-		string s4 = "<td>" + tables[a-1][b-1][c-1].metaInfo[i][2] + "</td></tr>";
+	for (metaPos = temp.metaInfo.begin(); metaPos != temp.metaInfo.end(); ++metaPos) {
+		string s1 = "<tr><td>" + metaPos->first + "</td>";
+		string s2 = "<td>" + std::to_string(metaPos->second.conc) + "</td>";
+		string s3 = "<td>" + std::to_string(metaPos->second.sd) + "</td>";
+		string s4 = "<td>" + std::to_string(metaPos->second.ratio) + "</td></tr>";
 		info_str.append(QString::fromStdString(s1 + s2 + s3 + s4));
 	}
+	/*
+	for (int i = 0; i < 35; i++) {
+		string s1 = "<tr><td>" + tables[a - 1][b - 1][c - 1].metaInfo[i][3] + "</td>";
+		string s2 = "<td>" + tables[a - 1][b - 1][c - 1].metaInfo[i][0] + "</td>";
+		string s3 = "<td>" + tables[a - 1][b - 1][c - 1].metaInfo[i][1] + "</td>";
+		string s4 = "<td>" + tables[a - 1][b - 1][c - 1].metaInfo[i][2] + "</td></tr>";
+		info_str.append(QString::fromStdString(s1 + s2 + s3 + s4));
+	}
+	*/
 	info_str.append("</table></qt>");
 	
-	lcmInfo->setText(QString::fromStdString("slab: " + std::to_string(a) + ", " + std::to_string(b) + ", " + std::to_string(c)));
+	lcmInfo->setText(QString::fromStdString("slab: " + std::to_string(a+1) + ", " + std::to_string(b+1) + ", " + std::to_string(c+1)));
 	lcmInfo->append(info_str);
-	lcmInfo->append("\n\nFWHM: " + QString::fromStdString(tables[a-1][b-1][c-1].fwhm));
-	lcmInfo->append("SNR: " + QString::fromStdString(tables[a-1][b-1][c-1].snr));
+	lcmInfo->append("\n\nFWHM: " + QString::number(temp.fwhm));
+	lcmInfo->append("SNR: " + QString::number(temp.snr));
 }
 
 /***** draw and update planes *****/
@@ -417,14 +493,19 @@ void MainWindow::drawPlane(int planeType){
 	*/
 
 	initImages(planeType, t1image);
-	
-	if (overlay == true) {initImages(planeType, slabimage); }
-	else { plane[planeType]->setPixmap(QPixmap::fromImage(T1Images[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation))); }
 
 	if (voxelPick == true) { changeVoxelValues(selectedVoxel, true); }
 	else { changeVoxelValues(selectedVoxel, false); selectedVoxel = -1; }
+	
+	if (overlay == true) {
+		if (maskvol.empty()) { initImages(planeType, slabimage); overlayImage(T1Images[planeType], slabImages[planeType], planeType); }
+		else { initImages(planeType, maskimage); overlayImage(T1Images[planeType], maskImages[planeType], planeType); }
+	}
+	else { plane[planeType]->setPixmap(QPixmap::fromImage(T1Images[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation))); }
+	
 
-	overlayImage(T1Images[planeType], slabImages[planeType], planeType);
+	//if (mask == true) { overlayImage(T1Images[planeType], maskImages[planeType], planeType); }
+	//else { overlayImage(T1Images[planeType], slabImages[planeType], planeType); }	
 }
 
 void MainWindow::overlayImage(QImage base, QImage overlay, int planeType) {
@@ -473,7 +554,7 @@ void MainWindow::initImages(int planeType, int imageType) {
 			}
 		}
 	}
-	else {
+	else if (imageType == slabimage) {
 		switch (planeType) {
 		case CORONAL: width = slab->nx(); height = slab->nz(); break;
 		case SAGITTAL: width = slab->ny(); height = slab->nz(); break;
@@ -490,10 +571,34 @@ void MainWindow::initImages(int planeType, int imageType) {
 				case SAGITTAL: val = slabvol[sliceNum[planeType]][i][j]; break;
 				case AXIAL: val = slabvol[i][j][sliceNum[planeType]]; break;
 				}
-				if (val == -1) { value = qRgba(0, 0, 0, 0); }
-				else if (val == 1495) {value = qRgba(val*intensity, 0, val*intensity, 255); }
+				if (val == -1 || val == 0) { value = qRgba(0, 0, 0, 0); }
+				else if (val == 1495) { value = qRgba(val*intensity, 0, val*intensity, 255); }
 				else { value = qRgba(val*intensity, val*intensity, 0, 255);}
 				slabImages[planeType].setPixel(i, height - j, value);
+			}
+		}
+	}
+	else if (imageType == maskimage) {
+		switch (planeType) {
+		case CORONAL: width = mask->nx(); height = mask->nz(); break;
+		case SAGITTAL: width = mask->ny(); height = mask->nz(); break;
+		case AXIAL:	width = mask->nx(); height = mask->ny(); break;
+		}
+
+		maskImages[planeType] = QImage(width, height, QImage::Format_ARGB32);
+		maskImages[planeType].fill(qRgba(0, 0, 0, 0));
+
+		for (int i = 0; i < width; i++) {
+			for (int j = 0; j < height; j++) {
+				switch (planeType) {
+				case CORONAL: val = maskvol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = maskvol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = maskvol[i][j][sliceNum[planeType]]; break;
+				}
+
+				if (val == 1) { value = qRgba(255,255,0,255); }
+				else { value = qRgba(0, 0, 0, 0); }
+				maskImages[planeType].setPixel(i, height - j, value);
 			}
 		}
 	}
@@ -577,10 +682,6 @@ float MainWindow::getSlabVoxelValue(int x, int y, int planeType) {
 	case AXIAL: val = slabvol[x][height - y][sliceNum[planeType]]; break;
 	}
 
-	// print for debugging
-	//string s = "slabvol: " + std::to_string(val);
-	//lcmInfo->append(QString::fromStdString(s));
-
 	return val;
 }
 
@@ -605,65 +706,92 @@ void MainWindow::changeVoxelValues(float value, bool on) {
 	}
 }
 
-/*
-void MainWindow::changeVoxelValues(int x, int y, int planeType) {
-	int width = slabImages[planeType].width();
-	int height = slabImages[planeType].height();
-	float val, temp;
+/***** slab mask making (voxel quality check) *****/
+bool MainWindow::loadSlabMask(const QString &fileName) {
+	if (mask != NULL) { delete mask; }
 
-	switch (planeType) {
-		case CORONAL: val = slabvol[x][sliceNum[planeType]][height-y];  break;
-		case SAGITTAL: val = slabvol[sliceNum[planeType]][x][height-y]; break;
-		case AXIAL: val = slabvol[x][height-y][sliceNum[planeType]]; break;
+	string filename = fileName.toStdString();
+	mask = new NiftiImage(filename, 'r');
+	arr1Dto3D(mask, maskimage);
+
+	if (overlay == false) { overlay = true; }
+	
+	drawPlane(CORONAL);
+	drawPlane(SAGITTAL);
+	drawPlane(AXIAL);
+
+	return true;
+}
+
+void MainWindow::voxelQualityCheck(string metabolite, int sd, float fwhm, int snr) {
+	if (sd == -1 || fwhm == -1) {
+		// exception -- not available sd, fwhm values 
 	}
-
-	// print for debugging
-	string s = "slabvol: " + std::to_string(val);
-	lcmInfo->append(QString::fromStdString(s));
-
-	if (val != -1) {// change value only for slab voxel
-		for (int p = 0; p < 3; p++) { // update voxel value for every plane
-			for (int i = 0; i < slabImages[p].width(); i++) {
-				for (int j = 0; j < slabImages[p].height(); j++) {
-					if (p == CORONAL) { temp = slabvol[i][sliceNum[p]][j]; }
-					else if (p == SAGITTAL) { temp = slabvol[sliceNum[p]][i][j]; }
-					else if (p == AXIAL) { temp = slabvol[i][j][sliceNum[p]]; }
-
-					if (temp == val) { slabImages[p].setPixelColor(i, height - j, qRgba(temp*intensity, 0, 0, 255)); }
+	else if (tables == NULL) {
+		// exception -- LCM info did not load
+	}
+	else {
+		for (int i = 0; i < 3; i++) {
+			for (int j = 0; j < 32; j++) {
+				for (int k = 0; k < 32; k++) {
+					map<string, Metabolite>::iterator tempPos;
+					tempPos = tables[i][j][k].metaInfo.find(metabolite);
+					if (tempPos != tables[i][j][k].metaInfo.end()) {
+						if (tempPos->second.sd > sd || tables[i][j][k].fwhm > fwhm || tables[i][j][k].snr < snr) {
+							tempPos->second.qc = false;
+						}
+					}
+					else {
+						// exception -- metabolite not found
+					}
 				}
 			}
 		}
+		lcmInfo->append("slab table qc value all changed");
 	}
+}
 
+void MainWindow::saveSlabMask(string metabolite) {
+	if (slabvol.empty()) { lcmInfo->setText("slabvol is empty, cannot init mask image size"); }
 
-	/* change voxel values by color -- epic fail
-	if (color.rgb() != qRgb(0, 0, 0)) { // change value for only slab voxel
-		for (int p = 0; p < 3; p++) { // update voxel value for every plane
-			int width = slabImages[p].width();
-			int height = slabImages[p].height();
+	vec3df imagevol = slabvol;
+	float slabval = 0;
 
-			if (p == 0) { lcmInfo->append("plane CORONAL"); }
-			else if (p == 1) { lcmInfo->append("plane SAGITTAL"); }
-			else { lcmInfo->append("plane AXIAL"); }			
+	const size_t dimX = slabvol.size();
+	const size_t dimY = slabvol[0].size();
+	const size_t dimZ = slabvol[0][0].size();
 
-			
-			for (int i = 0; i < width; i++) {
-				for (int j = 0; j < height; j++) {
-					QColor temp = slabImages[p].pixelColor(i, j);
-					if (temp.redF() == color.redF()) {
-						string s1 = "picked voxel: " + std::to_string(color.redF()) + ", " + std::to_string(color.greenF()) + ", " + std::to_string(color.blueF());
-						string s2 = "changed voxel("+std::to_string(i)+","+std::to_string(j)+"): " + std::to_string(temp.redF()) + ", " + std::to_string(temp.greenF()) + ", " + std::to_string(temp.blueF());
-						//lcmInfo->append(QString::fromStdString(s1));
-						//lcmInfo->append(QString::fromStdString(s2));
-						
-						temp.setRgbF(temp.redF(), 0.0, 0.0, 1.0);
-						slabImages[p].setPixelColor(i, j, temp);
+//	imagevol.resize(dim_X);
+//	for (int i = 0; i < dim_X; i++) {
+//		imagevol[i].resize(dim_Y);
+//		for (int j = 0; j < dim_Y; j++) {
+//			imagevol[i][j].resize(dim_Z);
+//		}
+//	}
+
+	for (int i = 0; i < dimX; i++) {
+		for (int j = 0; j < dimY; j++) {
+			for (int k = 0; k < dimZ; k++) {
+				slabval = slabvol[i][j][k];
+				if (slabval == -1 || slabval == 0) { imagevol[i][j][k] = 0; }
+				else {
+					int a = (slabval - 1) / 1024;
+					int b = fmod((slabval - 1), 1024) / 32;
+					int c = fmod(fmod((slabval - 1), 1024), 32);
+
+					map<string, Metabolite>::iterator tempPos = tables[a][b][c].metaInfo.find(metabolite);
+					if (tempPos != tables[a][b][c].metaInfo.end()) {
+						if (tempPos->second.qc) { imagevol[i][j][k] = 1; }
+						else { imagevol[i][j][k] = 0; }
 					}
 				}
 			}
 		}
 	}
-}*/
+
+	saveImageFile(getMaskFileName().toStdString(), img, imagevol);
+	lcmInfo->append("save: slab mask image");
+}
 
 
 //////////////////////////////////
@@ -845,4 +973,10 @@ QString MainWindow::getSlabFileName()
 {
 	QFileInfo f(imgFileName);
 	return (f.absolutePath() + "/" + f.baseName() + "_slab." + f.completeSuffix());
+}
+
+QString MainWindow::getMaskFileName()
+{
+	QFileInfo f(imgFileName);
+	return (f.absolutePath() + "/" + f.baseName() + "_mask." + f.completeSuffix());
 }

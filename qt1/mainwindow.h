@@ -19,6 +19,7 @@
 
 #define t1image 0
 #define slabimage 1
+#define maskimage 2
 
 struct DicomInfo
 {
@@ -32,9 +33,20 @@ struct DicomInfo
 };
 typedef vector<vector<vector<float>>> vec3df; // vector - 3d - float
 
+struct Metabolite {
+	string name;
+	float conc;
+	int sd;
+	float ratio;
+	bool qc;
+};
+
 struct TableInfo {
-	string metaInfo[35][4];
-	string fwhm, snr;
+	//string metaInfo[35][4];
+	//string fwhm, snr;
+	map<string, Metabolite> metaInfo;
+	float fwhm;
+	int snr;
 };
 
 class QAction;
@@ -60,7 +72,8 @@ public:
 	void valueUpdateCor(int value);
 	void valueUpdateSag(int value);
 	void valueUpdateAxi(int value);
-
+	void openSlabMask();
+	void makeSlabMask();
 
 private:
 	QWidget *mainWidget;
@@ -101,8 +114,10 @@ private:
 
 	// LCM info
 	TableInfo ***tables = NULL;
+	QStringList metaList;
 
 	bool loadLCMInfo(QStringList filepaths);
+	TableInfo parseTable(string filename);
 	void presentLCMInfo();
 
 	// Draw and update planes
@@ -119,6 +134,16 @@ private:
 	float getSlabVoxelValue(int x, int y, int planeType);
 	void changeVoxelValues(float value, bool on);
 
+	// Slab - mask (voxel quality check)
+	NiftiImage *mask = NULL;
+	vec3df maskvol;
+	QImage maskImages[3];
+	//bool mask = false;
+
+	bool loadSlabMask(const QString &);
+	void voxelQualityCheck(string metabolite, int sd, float fwhm, int snr);
+	void saveSlabMask(string metabolite);
+	QString getMaskFileName();
 
 	// Slab
 	void makeSlab();
