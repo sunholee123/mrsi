@@ -88,6 +88,7 @@ private:
 	QTextEdit *lcmInfo;
 	
 	void createActions();
+	void setLCMLayout();
 	
 	// MRI image
 	NiftiImage *img = NULL;

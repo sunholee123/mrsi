@@ -16,7 +16,6 @@ MainWindow::MainWindow()
 		plane[i]->setFixedHeight(planeSize);
 		plane[i]->setAlignment(Qt::AlignHCenter);
 		plane[i]->setStyleSheet("background-color: black;");
-		//plane[i]->setStyleSheet("background-color: white;");
 		plane[i]->installEventFilter(this);
 	}
 	
@@ -54,16 +53,20 @@ MainWindow::MainWindow()
 
 	// LCModel info layout
 	lcmLayout = new QVBoxLayout;
-	lcmInfo = new QTextEdit;
+	/*
 	QLabel *lcmInfoTitle = new QLabel("<font color='black'>MRSI Chemical Information</font>");
-	//lcmInfo->setText("This is LCModel Text\n");
-	lcmInfo->setReadOnly(true);
-	lcmInfo->setFixedHeight(600);
 	lcmInfoTitle->setFixedWidth(planeSize);
-	lcmInfoTitle->setAlignment(Qt::AlignCenter);
-	lcmLayout->addWidget(lcmInfoTitle, 0, 0);
-	lcmLayout->addWidget(lcmInfo, 1, 0);
+	lcmInfoTitle->setAlignment(Qt::AlignHCenter);
 
+	lcmInfo = new QTextEdit;
+	lcmInfo->setReadOnly(true);
+	lcmInfo->setText("Please Load LCM process result files");
+
+	lcmLayout->addWidget(lcmInfoTitle);
+	lcmLayout->addWidget(lcmInfo);
+	*/
+
+	setLCMLayout();
 	mainLayout->addLayout(viewerLayout);
 	mainLayout->addLayout(lcmLayout);
 }
@@ -80,22 +83,57 @@ MainWindow::~MainWindow()
 		slabvol = vec3df();
 }
 
+// not fully implemented : problem with height, add buttons etc.
+void MainWindow::setLCMLayout() {
+	if (metaList.isEmpty()) {
+		QLabel *lcmInfoTitle = new QLabel("<font color='black'>MRSI Chemical Information</font>");
+		lcmInfoTitle->setFixedWidth(planeSize);
+		lcmInfoTitle->setAlignment(Qt::AlignHCenter);
+
+		lcmInfo = new QTextEdit;
+		lcmInfo->setReadOnly(true);
+		lcmInfo->setText("Please Load LCM process result files");
+
+		lcmLayout->addWidget(lcmInfoTitle);
+		lcmLayout->addWidget(lcmInfo);
+	}
+	else { // LCM info loaded
+		//lcmLayout->removeWidget(lcmInfo);
+		lcmInfo->hide();
+
+		QGroupBox *metabolitesBox = new QGroupBox(tr("select metabolites need to be analyzed"));
+		QVBoxLayout *vbox = new QVBoxLayout;
+		for (int i = 0; i < metaList.size(); i++) {
+			QCheckBox *metaBox = new QCheckBox();
+			metaBox->setText(metaList[i]);
+			vbox->addWidget(metaBox);
+			//connect()
+		}
+		metabolitesBox->setLayout(vbox);
+		lcmLayout->addWidget(metabolitesBox);
+	}
+}
+
 /***** widget menu actions *****/
 void MainWindow::createActions()
 {
 	QMenu *fileMenu = menuBar()->addMenu(tr("File"));
-	QMenu *statsMenu = menuBar()->addMenu(tr("Statistics"));
+	QMenu *slabMenu = menuBar()->addMenu(tr("Slab"));
+	QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
 
-	QAction *openImgAct = fileMenu->addAction(tr("Open Image File"), this, &MainWindow::open);
-	QAction *openDicomAct = fileMenu->addAction(tr("Open Dicom Files and Create Slab Image"), this, &MainWindow::loadDicom);
-	QAction *loadLCMInfo = fileMenu->addAction(tr("Load LCM Info"), this, &MainWindow::openLCM);
+	QAction *openImgAct = fileMenu->addAction(tr("Open Image"), this, &MainWindow::open);
 	QAction *overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
 	QAction *openSlabMask = fileMenu->addAction(tr("Overlay Slab Mask"), this, &MainWindow::openSlabMask);
-	QAction *makeSlabMask = statsMenu->addAction(tr("Create Slab Mask"), this, &MainWindow::makeSlabMask);
 	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
+	
+	QAction *openDicomAct = slabMenu->addAction(tr("Create Slab Image"), this, &MainWindow::loadDicom);
+	QAction *makeSlabMask = slabMenu->addAction(tr("Create Slab Mask Image"), this, &MainWindow::makeSlabMask);
+	QAction *loadLCMInfo = slabMenu->addAction(tr("Load LCM Info"), this, &MainWindow::openLCM);
+
+	// future work: add help action
 
 	fileMenu->addSeparator();
-	statsMenu->addSeparator();
+	slabMenu->addSeparator();
 }
 
 void MainWindow::open()
@@ -111,25 +149,10 @@ void MainWindow::open()
 		loadSlab(getSlabFileName());
 }
 
-void MainWindow::loadDicom()
-{
-	findDicomFiles();
-	makeSlab();
-	loadSlab(getSlabFileName());
-
-}
-
 void MainWindow::openSlab() {
 	QFileDialog dialog(this, tr("Open File"));
 	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
 	while (dialog.exec() == QDialog::Accepted && !loadSlab(dialog.selectedFiles().first())) {}
-}
-
-void MainWindow::openLCM() {
-	QFileDialog dialog(this, tr("Open File"));
-	dialog.setNameFilter(tr("LCM table files (*.table)"));
-	dialog.setFileMode(QFileDialog::ExistingFiles);
-	while (dialog.exec() == QDialog::Accepted && !loadLCMInfo(dialog.selectedFiles())) {}
 }
 
 void MainWindow::openSlabMask() {
@@ -138,7 +161,16 @@ void MainWindow::openSlabMask() {
 	while (dialog.exec() == QDialog::Accepted && !loadSlabMask(dialog.selectedFiles().first())) {}
 }
 
+void MainWindow::loadDicom()
+{
+	findDicomFiles();
+	makeSlab();
+	loadSlab(getSlabFileName());
+
+}
+
 void MainWindow::makeSlabMask() {
+	// future work: if no LCM data loaded, then popup message
 	QDialog dialog(this);
 	QFormLayout form(&dialog);
 
@@ -175,6 +207,13 @@ void MainWindow::makeSlabMask() {
 		voxelQualityCheck(metabolite, sd, fwhm, snr);
 		saveSlabMask(metabolite);
 	}
+}
+
+void MainWindow::openLCM() {
+	QFileDialog dialog(this, tr("Open File"));
+	dialog.setNameFilter(tr("LCM table files (*.table)"));
+	dialog.setFileMode(QFileDialog::ExistingFiles);
+	while (dialog.exec() == QDialog::Accepted && !loadLCMInfo(dialog.selectedFiles())) {}
 }
 
 /***** load MRI image *****/
@@ -363,7 +402,8 @@ bool MainWindow::loadLCMInfo(QStringList filepaths) {
 			tables[x - 1][y - 1][z - 1] = table;
 		}
 
-		lcmInfo->append("LCM info loaded");
+		//lcmInfo->append("LCM info loaded");
+		setLCMLayout();
 		return true;
 	}
 }
@@ -740,6 +780,9 @@ void MainWindow::voxelQualityCheck(string metabolite, int sd, float fwhm, int sn
 						if (tempPos->second.sd > sd || tables[i][j][k].fwhm > fwhm || tables[i][j][k].snr < snr) {
 							tempPos->second.qc = false;
 						}
+						else {
+							tempPos->second.qc = true;
+						}
 					}
 					else {
 						// exception -- metabolite not found
@@ -978,5 +1021,5 @@ QString MainWindow::getSlabFileName()
 QString MainWindow::getMaskFileName()
 {
 	QFileInfo f(imgFileName);
-	return (f.absolutePath() + "/" + f.baseName() + "_mask." + f.completeSuffix());
+	return (f.absolutePath() + "/" + f.baseName() + "_mask." + f.completeSuffix()); // further work -- "_(metabolite name)"
 }
