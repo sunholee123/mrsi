@@ -24,10 +24,21 @@ struct DicomInfo
 {
 	Float32 coordFH, coordAP, coordRL;
 	Float32 angleFH, angleAP, angleRL;
+	/*
 	DicomInfo& operator-(const DicomInfo& dcminfo) {
 		coordFH -= dcminfo.coordFH; coordAP -= dcminfo.coordAP; coordRL -= dcminfo.coordRL;
 		angleFH -= dcminfo.angleFH; angleAP -= dcminfo.angleAP; angleRL -= dcminfo.angleRL;
 		return *this;
+	}*/
+	friend DicomInfo operator-(const DicomInfo& a, const DicomInfo& b) {
+		DicomInfo result;
+		result.coordFH = a.coordFH - b.coordFH;
+		result.coordAP = a.coordAP - b.coordAP;
+		result.coordRL = a.coordRL - b.coordRL;
+		result.angleFH = a.angleFH - b.angleFH;
+		result.angleAP = a.angleAP - b.angleAP;
+		result.angleRL = a.angleRL - b.angleRL;
+		return result;
 	}
 };
 typedef vector<vector<vector<float>>> vec3df; // vector - 3d - float
@@ -60,11 +71,11 @@ public:
 	void valueUpdateCor(int value);
 	void valueUpdateSag(int value);
 	void valueUpdateAxi(int value);
-
+	void valueUpdateIntensity(int value);
 
 private:
 	QWidget *mainWidget;
-	int planeSize = 300;
+	int planeSize = 500;
 	QLabel *plane[3];
 	QLabel *sliceInfoText[3];
 	QSpinBox *sliceSpinBox[3];
@@ -73,7 +84,11 @@ private:
 	QGridLayout *ctrlLayout;
 	QVBoxLayout *lcmLayout;
 	QTextEdit *lcmInfo;
-	
+
+	QLabel *intensityText;
+	//QDoubleSpinBox *intensitySpinBox;
+	QSpinBox *intensitySpinBox;
+
 	void createActions();
 	
 	// MRI image
@@ -82,15 +97,28 @@ private:
 	QImage T1Images[3];
 	QString imgFileName;
 	float intensity;
+	float T1MaxVal;
 
 	bool loadImageFile(const QString &);
 	void setDefaultIntensity();
+	float getMaxVal(vec3df imagevol)
+	{
+		float maxval = 0;
+		for (int i = 0; i < img->nx(); i++) {
+			for (int j = 0; j < img->ny(); j++) {
+				for (int k = 0; k < img->nz(); k++) {
+					if (imagevol[i][j][k] > maxval) { maxval = imagevol[i][j][k]; }
+				}
+			}
+		}
+		return maxval;
+	}
 	void setSliceNum();
 	void arr1Dto3D(NiftiImage *image, int imageType);
 
 	// DICOM image
 	DicomInfo T1, MRSI;
-	void findDicomFiles();
+	bool findDicomFiles(QString dir);
 
 	// Slab image
 	NiftiImage *slab = NULL;

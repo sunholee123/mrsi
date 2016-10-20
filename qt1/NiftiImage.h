@@ -8,7 +8,8 @@
 #define NIFTI_IMAGE
 
 #include <stdio.h>
-#include <zlib.h>
+//#include <zlib.h>
+#include <QtZlib\zlib.h>
 
 #include <string>
 #include <iostream>

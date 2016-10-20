@@ -8,6 +8,7 @@ MainWindow::MainWindow()
 	setCentralWidget(mainWidget);
 	QHBoxLayout *mainLayout = new QHBoxLayout();
 	mainWidget->setLayout(mainLayout);
+	this->move(100, 50);
 
 	for (int i = 0; i < 3; i++)
 	{
@@ -33,22 +34,33 @@ MainWindow::MainWindow()
 		sliceNum[i] = 1;
 		sliceSpinBox[i]->setValue(sliceNum[i]);
 	}
+	//intensitySpinBox = new QDoubleSpinBox();
+	intensitySpinBox = new QSpinBox();
+	intensitySpinBox->setRange(0, 9999);
+	intensity = 0;
+	intensitySpinBox->setValue(intensity);
+
 	connect(sliceSpinBox[0], SIGNAL(valueChanged(int)), this, SLOT(valueUpdateCor(int)));
 	connect(sliceSpinBox[1], SIGNAL(valueChanged(int)), this, SLOT(valueUpdateSag(int)));
 	connect(sliceSpinBox[2], SIGNAL(valueChanged(int)), this, SLOT(valueUpdateAxi(int)));
+	connect(intensitySpinBox, SIGNAL(valueChanged(int)), this, SLOT(valueUpdateIntensity(int)));
 
 	// controllers layout
 	ctrlLayout = new QGridLayout;
 	sliceInfoText[AXIAL] = new QLabel("<font color='black'>Axial slice:</font>");
 	sliceInfoText[SAGITTAL] = new QLabel("<font color='black'>Sagittal slice:</font>");
 	sliceInfoText[CORONAL] = new QLabel("<font color ='black'>Coronal slice:</font>");
-	for (int i = 0; i < 3; i++)
+	int i;
+	for (i = 0; i < 3; i++)
 	{
 		sliceInfoText[i]->setVisible(true);
 		ctrlLayout->addWidget(sliceInfoText[i], i, 0);
 		ctrlLayout->addWidget(sliceSpinBox[i], i, 1);
-		
 	}
+	intensityText = new QLabel("<font color = 'black'>Intensity: </font>");
+	ctrlLayout->addWidget(intensityText, i, 0);
+	ctrlLayout->addWidget(intensitySpinBox, i, 1);
+	
 	viewerLayout->addLayout(ctrlLayout, 1, 1);
 	createActions();
 
@@ -102,17 +114,22 @@ void MainWindow::open()
 
 	// if the slab file exists, then load it
 	// future work: optimization (duplication of drawing parts)
-	QFileInfo f(getSlabFileName());
-	if (f.exists() && f.isFile())
-		loadSlab(getSlabFileName());
+//	QFileInfo f(getSlabFileName());
+//	if (f.exists() && f.isFile())
+//		loadSlab(getSlabFileName());
 }
 
 void MainWindow::loadDicom()
 {
-	findDicomFiles();
-	makeSlab();
-	loadSlab(getSlabFileName());
-
+	QFileDialog dialog(this, tr("Select Directory"));
+	dialog.setFileMode(QFileDialog::Directory);
+	if (dialog.exec() == QDialog::Accepted) {
+		if (findDicomFiles(dialog.selectedFiles().first()))
+		{
+			makeSlab();
+			loadSlab(getSlabFileName());
+		}
+	}
 }
 
 void MainWindow::openSlab() {
@@ -155,17 +172,8 @@ bool MainWindow::loadImageFile(const QString &fileName)
 
 void MainWindow::setDefaultIntensity()
 {
-	// find maximum value
-	float maxval = 0;
-	for (int i = 0; i < img->nx(); i++) {
-		for (int j = 0; j < img->ny(); j++) {
-			for (int k = 0; k < img->nz(); k++) {
-				if (imgvol[i][j][k] > maxval) { maxval = imgvol[i][j][k]; }
-			}
-		}
-	}	
-	//intensity = 256 / maxval;
-	intensity = 300 / maxval;
+	T1MaxVal = getMaxVal(imgvol);
+	intensity = 300 / T1MaxVal;
 }
 
 void MainWindow::setSliceNum()
@@ -214,10 +222,15 @@ void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
 }
 
 /***** load Dicom image *****/
-void MainWindow::findDicomFiles()
+bool MainWindow::findDicomFiles(QString dir)
 {
-	QString dir = "C:/New folder/20140212_CON000781_KSE_fu";
 	QDirIterator it(dir, QDir::Files, QDirIterator::Subdirectories);
+	if (!it.hasNext())
+	{
+		QMessageBox::StandardButton msg;
+		msg = QMessageBox::critical(this, "Error!", "Can't find DICOM files.", QMessageBox::Ok);
+		return false;
+	}
 
 	DcmFileFormat fileformat;
 	OFCondition status;
@@ -230,45 +243,45 @@ void MainWindow::findDicomFiles()
 	while (it.hasNext())
 	{
 		counter++;
-		if (counter % 100 == 0)
-		{
-			status = fileformat.loadFile(it.next().toStdString().c_str());
-			if (status.good()) {
-				if (fileformat.getDataset()->findAndGetSequence(DcmTag(0x2001, 0x105f, "Philips Imaging DD 001"), sqi, false, false).good()
-					&& fileformat.getDataset()->findAndGetOFString(DCM_SeriesDescription, seriesDescription).good()) {
-					if (!T1flag && seriesDescription.compare("T1_SAG_MPRAGE_1mm_ISO") == 0)
-					{
-						item = sqi->getItem(0);
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), T1.coordFH, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), T1.coordAP, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), T1.coordRL, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), T1.angleFH, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), T1.angleAP, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), T1.angleRL, 0, false).good();
-						T1flag = true;
-					}
-					else if (!MRSIflag && seriesDescription.compare("3SL_SECSI_TE19") == 0)
-					{
-						item = sqi->getItem(0);
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1078), MRSI.coordFH, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1079), MRSI.coordAP, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x107a), MRSI.coordRL, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1071), MRSI.angleFH, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1072), MRSI.angleAP, 0, false).good();
-						item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleRL, 0, false).good();
 
-						// mrsi voxel size, slab
-						MRSIflag = true;
-					}
-					if (T1flag && MRSIflag)
-						break;
+		status = fileformat.loadFile(it.next().toStdString().c_str());
+		if (status.good()) {
+			if (fileformat.getDataset()->findAndGetSequence(DcmTag(0x2001, 0x105f, "Philips Imaging DD 001"), sqi, false, false).good()
+				&& fileformat.getDataset()->findAndGetOFString(DCM_SeriesDescription, seriesDescription).good()) {
+				if (!T1flag && seriesDescription.compare("T1_SAG_MPRAGE_1mm_ISO") == 0)
+				{
+					item = sqi->getItem(0);
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1078), T1.coordAP, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1079), T1.coordFH, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x107a), T1.coordRL, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1071), T1.angleAP, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1072), T1.angleFH, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1073), T1.angleRL, 0, false).good();
+					T1flag = true;
 				}
+				else if (!MRSIflag && seriesDescription.compare("3SL_SECSI_TE19") == 0)
+				{
+					item = sqi->getItem(0);
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1078), MRSI.coordAP, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1079), MRSI.coordFH, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x107a), MRSI.coordRL, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1071), MRSI.angleAP, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1072), MRSI.angleFH, 0, false).good();
+					item->findAndGetFloat32(DcmTag(0x2005, 0x1073), MRSI.angleRL, 0, false).good();
+
+					// mrsi voxel size, slab
+					MRSIflag = true;
+				}
+				if (T1flag && MRSIflag)
+					return true;
+					break;
 			}
 		}
 		else
 			it.next();
 
 	}
+	return false;
 }
 
 /***** load Slab image *****/
@@ -491,8 +504,9 @@ void MainWindow::initImages(int planeType, int imageType) {
 				case AXIAL: val = slabvol[i][j][sliceNum[planeType]]; break;
 				}
 				if (val == -1) { value = qRgba(0, 0, 0, 0); }
-				else if (val == 1495) {value = qRgba(val*intensity, 0, val*intensity, 255); }
-				else { value = qRgba(val*intensity, val*intensity, 0, 255);}
+				else if (val == 1495) { value = qRgba(val*intensity, 0, val*intensity, 255); }
+				//else { value = qRgba(val*intensity, val*intensity, 0, 255);} // temporary (for better displaying)
+				else { value = qRgba(val*intensity*0.5, val*intensity*0.5, 0, 255); } // temporary (for better displaying)
 				slabImages[planeType].setPixel(i, height - j, value);
 			}
 		}
@@ -514,6 +528,14 @@ void MainWindow::valueUpdateSag(int value)
 void MainWindow::valueUpdateAxi(int value)
 {
 	sliceNum[AXIAL] = value - 1;
+	drawPlane(AXIAL);
+}
+
+void MainWindow::valueUpdateIntensity(int value)
+{
+	intensity = 300.0 /value;
+	drawPlane(CORONAL);
+	drawPlane(SAGITTAL);
 	drawPlane(AXIAL);
 }
 
@@ -665,24 +687,28 @@ void MainWindow::changeVoxelValues(int x, int y, int planeType) {
 	}
 }*/
 
-
-//////////////////////////////////
-// not fully implemented yet!!!
-//////////////////////////////////
 vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordFH, float coordRL, float angleAP, float angleFH, float angleRL)
 {
 	const size_t dimX = imagevol.size();
 	const size_t dimY = imagevol[0].size();
 	const size_t dimZ = imagevol[0][0].size();
 
-	Affine3f rotRL = Affine3f(AngleAxisf(deg2rad(angleRL), Vector3f(-1, 0, 0)));
-	Affine3f rotAP = Affine3f(AngleAxisf(deg2rad(angleFH), Vector3f(0, 1, 0)));
-	Affine3f rotFH = Affine3f(AngleAxisf(deg2rad(angleAP), Vector3f(0, 0, 1)));
-	
+	Affine3f rotRL = Affine3f(AngleAxisf(deg2rad(angleRL), Vector3f(-1, 0, 0))); // sagittal - clockwise
+	Vector3f u1 = rotRL * Vector3f(0, 1, 0);
+	Affine3f rotAP = Affine3f(AngleAxisf(deg2rad(angleAP), u1));	// coronal - clockwise
+	Vector3f u2 = rotAP * Vector3f(0, 0, 1);
+	Affine3f rotFH = Affine3f(AngleAxisf(deg2rad(angleFH), u2));	// axial - counterclockwise
+
 	Affine3f r = rotFH * rotAP * rotRL;
+
 	Affine3f t1(Translation3f(Vector3f(-round(dimX / 2), -round(dimY / 2), -round(dimZ / 2))));
 	Affine3f t2(Translation3f(Vector3f(round(dimX / 2), round(dimY / 2), round(dimZ / 2))));
-	Affine3f t3(Translation3f(Vector3f(coordRL, -coordAP, coordFH)));	// uncertain
+
+	// 1st param++ ==> slab moves to left
+	// 2nd param++ ==> slab moves to front
+	// 3rd param++ ==> slab moves to up
+	Affine3f t3(Translation3f(Vector3f(coordRL, -coordAP, coordFH)));
+
 	Matrix4f m = (t3 * t2 * r * t1).matrix();
 	Matrix4f m_inv = m.inverse();
 
@@ -692,8 +718,8 @@ vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordF
 	MatrixXf imgcoord(4, 1);
 	MatrixXf newcoord(4, 1);
 	int x, y, z;
-//	QTime myTimer;
-//	myTimer.start();
+	//	QTime myTimer;
+	//	myTimer.start();
 	for (int i = 0; i < dimX; i++) {
 		for (int j = 0; j < dimY; j++) {
 			for (int k = 0; k < dimZ; k++) {
@@ -709,10 +735,9 @@ vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordF
 			}
 		}
 	}
-//	statusBar()->showMessage(QString::number(myTimer.elapsed()));
+	//	statusBar()->showMessage(QString::number(myTimer.elapsed()));
 	return rotvol;
 }
-
 float MainWindow::deg2rad(float degree)
 {
 	return degree * M_PI / 180;
@@ -782,11 +807,11 @@ void MainWindow::makeSlab()
 			}
 		}
 	}
-
+	
 	// rotate and translate
 	DicomInfo diff = MRSI - T1;
 	imagevol = transformation3d(imagevol, diff.coordAP, diff.coordFH, diff.coordRL, diff.angleAP, diff.angleFH, diff.angleRL);
-
+	
 	// slab image (full size)
 	vec3df slab;
 	const size_t dimX = img->nx();
