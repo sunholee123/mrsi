@@ -86,6 +86,7 @@ public:
 	void openSlabMask();
 	void makeSlabMask();
 	void valueUpdateIntensity(int value);
+	void updateMetaChecked(QAbstractButton*);
 
 private:
 	QWidget *mainWidget;
@@ -97,6 +98,8 @@ private:
 	QGridLayout *viewerLayout;
 	QGridLayout *ctrlLayout;
 	QVBoxLayout *lcmLayout;
+	QGroupBox *lcmInfoBox;
+
 	QTextEdit *lcmInfo;
 
 	QLabel *intensityText;
@@ -174,6 +177,9 @@ private:
 	void voxelQualityCheck(string metabolite, int sd, float fwhm, int snr);
 	void saveSlabMask(string metabolite);
 	QString getMaskFileName();
+
+	// statistics
+	float calAvgConc(string metabolite);
 
 	// Slab
 	void makeSlab();
