@@ -33,7 +33,6 @@ MainWindow::MainWindow()
 		sliceNum[i] = 1;
 		sliceSpinBox[i]->setValue(sliceNum[i]);
 	}
-	//intensitySpinBox = new QDoubleSpinBox();
 	intensitySpinBox = new QSpinBox();
 	intensitySpinBox->setRange(0, 9999);
 	intensity = 0;
@@ -89,8 +88,8 @@ MainWindow::~MainWindow()
 		delete img;
 	if (slab != NULL)
 		delete slab;
-	if (!imgvol.empty())
-		imgvol = vec3df();
+	if (!T1vol.empty())
+		T1vol = vec3df();
 	if (!slabvol.empty())
 		slabvol = vec3df();
 }
@@ -126,24 +125,34 @@ void MainWindow::setLCMLayout() {
 	}
 }
 
+void MainWindow::setEnabledT1DepMenus(bool enabled)
+{
+	overlaySlabAct->setEnabled(enabled);
+	openSlabMaskAct->setEnabled(enabled);
+	slabMenu->setEnabled(enabled);
+}
+
 /***** widget menu actions *****/
 void MainWindow::createActions()
 {
 	QMenu *fileMenu = menuBar()->addMenu(tr("File"));
-	QMenu *slabMenu = menuBar()->addMenu(tr("Slab"));
+	slabMenu = menuBar()->addMenu(tr("Slab"));
 	QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
 
-	QAction *openImgAct = fileMenu->addAction(tr("Open Image"), this, &MainWindow::open);
-	QAction *overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
-	QAction *openSlabMask = fileMenu->addAction(tr("Overlay Slab Mask"), this, &MainWindow::openSlabMask);
+	QAction *openImgAct = fileMenu->addAction(tr("Open T1 Image"), this, &MainWindow::open);
+	overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
+	openSlabMaskAct = fileMenu->addAction(tr("Overlay Slab Mask"), this, &MainWindow::openSlabMask);
 	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
 	
-	QAction *openDicomAct = slabMenu->addAction(tr("Create Slab Image"), this, &MainWindow::loadDicom);
-	QAction *makeSlabMask = slabMenu->addAction(tr("Create Slab Mask Image"), this, &MainWindow::makeSlabMask);
-	QAction *loadLCMInfo = slabMenu->addAction(tr("Load LCM Info"), this, &MainWindow::openLCM);
+	QAction *openDicomAct = slabMenu->addAction(tr("Create Slab Image from DICOM files"), this, &MainWindow::loadDicom);
+	QAction *makeSlabMaskAct = slabMenu->addAction(tr("Create Slab Mask Image"), this, &MainWindow::makeSlabMask);
+	QAction *loadLCMInfoAct = slabMenu->addAction(tr("Load LCM Info"), this, &MainWindow::openLCM);
+	QAction *loadSegImgsAct = slabMenu->addAction(tr("Load FSLVBM Segmented Images"), this, &MainWindow::loadSegImgs);
+	
+	// Some menus and actions are disabled until the T1 image is fully loaded
+	setEnabledT1DepMenus(false);
 
 	// future work: add help action
-
 	fileMenu->addSeparator();
 	slabMenu->addSeparator();
 }
@@ -185,6 +194,28 @@ void MainWindow::loadDicom()
 		}
 	}
 }
+
+void MainWindow::loadSegImgs()
+{
+	// get T1 directory name
+	QFileInfo f(imgFileName);
+	
+	// load gm, wm, csf images
+	QString gmFileName = f.absolutePath() + "/struc/" + f.baseName() + "_struc_GM.nii.gz";
+	QString wmFileName = f.absolutePath() + "/struc/" + f.baseName() + "_struc_brain_pve_2.nii.gz";
+	QString csfFileName = f.absolutePath() + "/struc/" + f.baseName() + "_struc_brain_pve_0.nii.gz";
+
+	img_seg = new NiftiImage(gmFileName.toStdString(), 'r');
+	gmvol = getImgvol(img_seg);
+	delete img_seg;
+	img_seg = new NiftiImage(wmFileName.toStdString(), 'r');
+	wmvol = getImgvol(img_seg);
+	delete img_seg;
+	img_seg = new NiftiImage(csfFileName.toStdString(), 'r');
+	csfvol = getImgvol(img_seg);;
+	delete img_seg;
+}
+
 
 void MainWindow::makeSlabMask() {
 	// future work: if no LCM data loaded, then popup message
@@ -243,7 +274,7 @@ bool MainWindow::loadImageFile(const QString &fileName)
 	imgFileName = fileName;
 	string filename = fileName.toStdString();
 	img = new NiftiImage(filename, 'r');
-	arr1Dto3D(img, t1image);
+	T1vol = getImgvol(img);
 
 	setDefaultIntensity();
 	setSliceNum();
@@ -254,13 +285,14 @@ bool MainWindow::loadImageFile(const QString &fileName)
 
 	const QString message = tr("Opened \"%1\\").arg(QDir::toNativeSeparators(fileName));
 	statusBar()->showMessage(message);
+	setEnabledT1DepMenus(true);
 
 	return true;
 }
 
 void MainWindow::setDefaultIntensity()
 {
-	T1MaxVal = getMaxVal(imgvol);
+	T1MaxVal = getMaxVal(T1vol);
 	intensity = 300 / T1MaxVal;
 }
 
@@ -279,35 +311,31 @@ void MainWindow::setSliceNum()
 	}
 }
 
-void MainWindow::arr1Dto3D(NiftiImage *image, int imageType) {
+vec3df MainWindow::getImgvol(NiftiImage *image) {
 	const size_t dimX = image->nx();
 	const size_t dimY = image->ny();
 	const size_t dimZ = image->nz();
 
 	float *array1D = image->readAllVolumes<float>();
-	vec3df imagevol;
+	vec3df array3D;
 
-	imagevol.resize(dimX);
+	array3D.resize(dimX);
 	for (int i = 0; i < dimX; i++) {
-		imagevol[i].resize(dimY);
+		array3D[i].resize(dimY);
 		for (int j = 0; j < dimY; j++) {
-			imagevol[i][j].resize(dimZ);
+			array3D[i][j].resize(dimZ);
 		}
 	}
 
 	for (int i = 0; i < dimX; i++) {
 		for (int j = 0; j < dimY; j++) {
 			for (int k = 0; k < dimZ; k++) {
-				imagevol[i][j][k] = array1D[i + j*dimX + k*dimX*dimY];
+				array3D[i][j][k] = array1D[i + j*dimX + k*dimX*dimY];
 			}
 		}
 	}
-
-	switch (imageType) {
-	case t1image: imgvol = imagevol; break;
-	case slabimage: slabvol = imagevol; break;
-	case maskimage: maskvol = imagevol; break;
-	}
+	delete array1D;
+	return array3D;
 }
 
 /***** load Dicom image *****/
@@ -363,12 +391,10 @@ bool MainWindow::findDicomFiles(QString dir)
 				}
 				if (T1flag && MRSIflag)
 					return true;
-					break;
 			}
 		}
 		else
 			it.next();
-
 	}
 	return false;
 }
@@ -379,9 +405,10 @@ bool MainWindow::loadSlab(const QString &fileName) {
 
 	string filename = fileName.toStdString();
 	slab = new NiftiImage(filename, 'r');
-	arr1Dto3D(slab, slabimage);
+	slabvol = getImgvol(slab);
 
-	if (overlay == false) { overlay = true; }
+overlay = true;
+
 	drawPlane(CORONAL);
 	drawPlane(SAGITTAL);
 	drawPlane(AXIAL);
@@ -390,7 +417,6 @@ bool MainWindow::loadSlab(const QString &fileName) {
 }
 
 /***** load LCM info *****/
-
 bool MainWindow::loadLCMInfo(QStringList filepaths) {
 	if (filepaths.isEmpty()) { return false; }
 	else {
@@ -535,9 +561,9 @@ void MainWindow::drawPlane(int planeType){
 		for (int j = 0; j<height; j++)
 		{
 			switch (planeType){
-				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
-				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
-				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
+				case CORONAL: val = T1vol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = T1vol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = T1vol[i][j][sliceNum[planeType]]; break;
 			}
 			val = val * intensity;
 			value = qRgb(val, val, val);
@@ -546,15 +572,28 @@ void MainWindow::drawPlane(int planeType){
 	*/
 
 	initImages(planeType, t1image);
-
-	if (voxelPick == true) { changeVoxelValues(selectedVoxel, true); }
-	else { changeVoxelValues(selectedVoxel, false); selectedVoxel = -1; }
-	
-	if (overlay == true) {
-		if (maskvol.empty()) { initImages(planeType, slabimage); overlayImage(T1Images[planeType], slabImages[planeType], planeType); }
-		else { initImages(planeType, maskimage); overlayImage(T1Images[planeType], maskImages[planeType], planeType); }
+/*
+	if (voxelPick == true)
+		changeVoxelValues(selectedVoxel, true);
+	else
+	{
+		changeVoxelValues(selectedVoxel, false);
+		selectedVoxel = -1;
 	}
-	else { plane[planeType]->setPixmap(QPixmap::fromImage(T1Images[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation))); }
+*/
+
+	if (!maskvol.empty())	// overlay mask image
+	{
+		initImages(planeType, slabimage);
+		overlayImage(T1Images[planeType], slabImages[planeType], planeType);
+	}
+	else if (overlay == true)	// overlay slab image
+	{
+		initImages(planeType, maskimage);
+		overlayImage(T1Images[planeType], maskImages[planeType], planeType);
+	}
+	else	// T1 image only
+		plane[planeType]->setPixmap(QPixmap::fromImage(T1Images[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
 	
 
 	//if (mask == true) { overlayImage(T1Images[planeType], maskImages[planeType], planeType); }
@@ -598,9 +637,9 @@ void MainWindow::initImages(int planeType, int imageType) {
 		for (int i = 0; i < width; i++) {
 			for (int j = 0; j < height; j++) {
 				switch (planeType) {
-				case CORONAL: val = imgvol[i][sliceNum[planeType]][j]; break;
-				case SAGITTAL: val = imgvol[sliceNum[planeType]][i][j]; break;
-				case AXIAL: val = imgvol[i][j][sliceNum[planeType]]; break;
+				case CORONAL: val = T1vol[i][sliceNum[planeType]][j]; break;
+				case SAGITTAL: val = T1vol[sliceNum[planeType]][i][j]; break;
+				case AXIAL: val = T1vol[i][j][sliceNum[planeType]]; break;
 				}
 				value = qRgb(val*intensity, val*intensity, val*intensity);
 				T1Images[planeType].setPixel(i, height - j, value);
@@ -624,7 +663,7 @@ void MainWindow::initImages(int planeType, int imageType) {
 				case SAGITTAL: val = slabvol[sliceNum[planeType]][i][j]; break;
 				case AXIAL: val = slabvol[i][j][sliceNum[planeType]]; break;
 				}
-				if (val == -1 || val == 0) { value = qRgba(0, 0, 0, 0); }
+				if (val == 0) { value = qRgba(0, 0, 0, 0); }
 				else if (val == 1495) { value = qRgba(val*intensity, 0, val*intensity, 255); }
 				else { value = qRgba(val*intensity, val*intensity, 0, 255);}
 				slabImages[planeType].setPixel(i, height - j, value);
@@ -712,8 +751,13 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *e) {
 
 					val = getSlabVoxelValue((x - margin1)*width1 / width2, (y - margin2)*height1 / height2, planeType);
 
-					if (selectedVoxel == val) { voxelPick = false; }
-					else if (val != -1) { selectedVoxel = val; voxelPick = true; }
+					if (selectedVoxel == val)
+						voxelPick = false;
+					else
+					{
+						selectedVoxel = val;
+						voxelPick = true;
+					}
 				}
 			}
 		}
@@ -725,7 +769,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *e) {
 				drawPlane(SAGITTAL);
 				drawPlane(AXIAL);
 
-				if (tables != NULL) { presentLCMInfo(); }
+				if (tables != NULL && selectedVoxel) { presentLCMInfo(); }
 			}
 		}
 	}
@@ -753,9 +797,9 @@ void MainWindow::changeVoxelValues(float value, bool on) {
 		for (int p = 0; p < 3; p++) { // update voxel value for every plane
 			for (int i = 0; i < slabImages[p].width(); i++) {
 				for (int j = 0; j < slabImages[p].height(); j++) {
-					if (p == CORONAL) { temp = slabvol[i][sliceNum[p]][j]; }
-					else if (p == SAGITTAL) { temp = slabvol[sliceNum[p]][i][j]; }
-					else if (p == AXIAL) { temp = slabvol[i][j][sliceNum[p]]; }
+					if (p == CORONAL)		{ temp = slabvol[i][sliceNum[p]][j]; }
+					else if (p == SAGITTAL)	{ temp = slabvol[sliceNum[p]][i][j]; }
+					else if (p == AXIAL)	{ temp = slabvol[i][j][sliceNum[p]]; }
 
 					if (temp == value) {
 						if (on == true) { slabImages[p].setPixelColor(i, slabImages[p].height() - j, qRgba(temp*intensity, 0, 0, 255)); }
@@ -773,7 +817,7 @@ bool MainWindow::loadSlabMask(const QString &fileName) {
 
 	string filename = fileName.toStdString();
 	mask = new NiftiImage(filename, 'r');
-	arr1Dto3D(mask, maskimage);
+	maskvol = getImgvol(mask);
 
 	if (overlay == false) { overlay = true; }
 	
@@ -1046,4 +1090,17 @@ QString MainWindow::getMaskFileName()
 {
 	QFileInfo f(imgFileName);
 	return (f.absolutePath() + "/" + f.baseName() + "_mask." + f.completeSuffix()); // further work -- "_(metabolite name)"
+}
+
+float MainWindow::getMaxVal(vec3df imagevol)
+{
+	float maxval = 0;
+	for (int i = 0; i < img->nx(); i++) {
+		for (int j = 0; j < img->ny(); j++) {
+			for (int k = 0; k < img->nz(); k++) {
+				if (imagevol[i][j][k] > maxval) { maxval = imagevol[i][j][k]; }
+			}
+		}
+	}
+	return maxval;
 }

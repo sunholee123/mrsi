@@ -25,12 +25,7 @@ struct DicomInfo
 {
 	Float32 coordFH, coordAP, coordRL;
 	Float32 angleFH, angleAP, angleRL;
-	/*
-	DicomInfo& operator-(const DicomInfo& dcminfo) {
-		coordFH -= dcminfo.coordFH; coordAP -= dcminfo.coordAP; coordRL -= dcminfo.coordRL;
-		angleFH -= dcminfo.angleFH; angleAP -= dcminfo.angleAP; angleRL -= dcminfo.angleRL;
-		return *this;
-	}*/
+
 	friend DicomInfo operator-(const DicomInfo& a, const DicomInfo& b) {
 		DicomInfo result;
 		result.coordFH = a.coordFH - b.coordFH;
@@ -78,6 +73,7 @@ public:
 	private slots:
 	void open();
 	void loadDicom();
+	void loadSegImgs();
 	void openSlab();
 	void openLCM();
 	void valueUpdateCor(int value);
@@ -106,9 +102,15 @@ private:
 	void createActions();
 	void setLCMLayout();
 	
-	// MRI image
+	// menu & actions
+	QMenu *slabMenu;
+	QAction *overlaySlabAct;
+	QAction *openSlabMaskAct;
+	void setEnabledT1DepMenus(bool);
+
+	// T1 image
 	NiftiImage *img = NULL;
-	vec3df imgvol;
+	vec3df T1vol;
 	QImage T1Images[3];
 	QString imgFileName;
 	float intensity;
@@ -116,20 +118,9 @@ private:
 
 	bool loadImageFile(const QString &);
 	void setDefaultIntensity();
-	float getMaxVal(vec3df imagevol)
-	{
-		float maxval = 0;
-		for (int i = 0; i < img->nx(); i++) {
-			for (int j = 0; j < img->ny(); j++) {
-				for (int k = 0; k < img->nz(); k++) {
-					if (imagevol[i][j][k] > maxval) { maxval = imagevol[i][j][k]; }
-				}
-			}
-		}
-		return maxval;
-	}
+	float getMaxVal(vec3df imagevol);
 	void setSliceNum();
-	void arr1Dto3D(NiftiImage *image, int imageType);
+	vec3df getImgvol(NiftiImage *image);
 
 	// DICOM image
 	DicomInfo T1, MRSI;
@@ -153,7 +144,7 @@ private:
 	// Draw and update planes
 	bool overlay = false;
 	bool voxelPick = false;
-	float selectedVoxel = -1;
+	float selectedVoxel = 0;
 
 	void drawPlane(int planeType);
 	void overlayImage(QImage base, QImage overlay, int planeType);
@@ -164,7 +155,7 @@ private:
 	float getSlabVoxelValue(int x, int y, int planeType);
 	void changeVoxelValues(float value, bool on);
 
-	// Slab - mask (voxel quality check)
+	// Mask (voxel quality check)
 	NiftiImage *mask = NULL;
 	vec3df maskvol;
 	QImage maskImages[3];
@@ -179,12 +170,17 @@ private:
 	void makeSlab();
 	QString getSlabFileName();
 
-	// Slab - transformation (not fully implemented yet!!!)
+	// Slab - transformation
 	vec3df transformation3d(vec3df imgvol, float coordFH, float coordAP, float coordRL , float angleFH, float angleAP, float angleRL);
 	float deg2rad(float degree);
 
 	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
-	bool saveImageFile(string filename, NiftiImage *image, vec3df data);	
+	bool saveImageFile(string filename, NiftiImage *image, vec3df data);
+
+	// Partial Volume Correction
+	NiftiImage *img_seg = NULL;
+	vec3df gmvol, wmvol, csfvol;
+
 };
 
 #endif
