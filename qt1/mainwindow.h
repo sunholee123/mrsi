@@ -53,6 +53,7 @@ struct TableInfo {
 	map<string, Metabolite> metaInfo;
 	float fwhm;
 	int snr;
+	float gm, wm, csf;
 };
 
 class QAction;
@@ -140,7 +141,7 @@ private:
 	TableInfo ***tables = NULL;
 	QStringList metaList;
 
-	bool loadLCMInfo(QStringList filepaths);
+	bool loadLCMInfo(QString dir); //bool loadLCMInfo(QStringList filepaths);
 	TableInfo parseTable(string filename);
 	void presentLCMInfo();
 
@@ -167,7 +168,7 @@ private:
 	bool loadSlabMask(const QString &);
 	void voxelQualityCheck(string metabolite, int sd, float fwhm, int snr);
 	void saveSlabMask(string metabolite);
-	QString getMaskFileName();
+	QString getMaskFileName(string metabolite);
 
 	// statistics
 	float calAvgConc(string metabolite);
@@ -186,7 +187,9 @@ private:
 	// Partial Volume Correction
 	NiftiImage *img_seg = NULL;
 	vec3df gmvol, wmvol, csfvol;
+	void calPVC();
 
+	tuple<int, int, int> n2abc(int n);
 };
 
 #endif

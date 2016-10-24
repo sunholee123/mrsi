@@ -178,9 +178,9 @@ void MainWindow::open()
 
 	// if the slab file exists, then load it
 	// future work: optimization (duplication of drawing parts)
-//	QFileInfo f(getSlabFileName());
-//	if (f.exists() && f.isFile())
-//		loadSlab(getSlabFileName());
+	QFileInfo f(getSlabFileName());
+	if (f.exists() && f.isFile())
+		loadSlab(getSlabFileName());
 }
 
 void MainWindow::openSlab() {
@@ -229,7 +229,6 @@ void MainWindow::loadSegImgs()
 	delete img_seg;
 }
 
-
 void MainWindow::makeSlabMask() {
 	// future work: if no LCM data loaded, then popup message
 	QDialog dialog(this);
@@ -243,10 +242,12 @@ void MainWindow::makeSlabMask() {
 
 	QLineEdit *sdInput = new QLineEdit(&dialog);
 	sdInput->setValidator(new QIntValidator(0, 100, this));
+	sdInput->setText("20");
 	form.addRow("SD(%)", sdInput);
 
 	QLineEdit *fwhmInput = new QLineEdit(&dialog);
 	fwhmInput->setValidator(new QDoubleValidator(0, 10, 2, this));
+	fwhmInput->setText("0.2");
 	form.addRow("FWHM", fwhmInput);
 
 	QLineEdit *snrInput = new QLineEdit(&dialog);
@@ -271,10 +272,12 @@ void MainWindow::makeSlabMask() {
 }
 
 void MainWindow::openLCM() {
-	QFileDialog dialog(this, tr("Open File"));
-	dialog.setNameFilter(tr("LCM table files (*.table)"));
-	dialog.setFileMode(QFileDialog::ExistingFiles);
-	while (dialog.exec() == QDialog::Accepted && !loadLCMInfo(dialog.selectedFiles())) {}
+	QFileDialog dialog(this, tr("Select Directory"));
+	dialog.setFileMode(QFileDialog::Directory);
+	if (dialog.exec() == QDialog::Accepted) {
+		loadLCMInfo(dialog.selectedFiles().first());
+	}
+
 }
 
 /***** load MRI image *****/
@@ -430,34 +433,40 @@ overlay = true;
 }
 
 /***** load LCM info *****/
-bool MainWindow::loadLCMInfo(QStringList filepaths) {
-	if (filepaths.isEmpty()) { return false; }
-	else {
-		tables = new TableInfo**[3];
-		for (int i = 0; i < 3; i++) {
-			tables[i] = new TableInfo*[32];
-			for (int j = 0; j < 32; j++) {
-				tables[i][j] = new TableInfo[32];
-			}
-		}
-
-		for (int i = 0; i < filepaths.count(); i++) {
-			string path = filepaths.at(i).toStdString();
-			string filename = path.substr(path.find_last_of("/\\") + 1);
-			size_t index1 = filename.find("_");
-			size_t index2 = filename.find("-");
-			size_t index3 = filename.find(".");
-			int x = filename.at(index1 - 1) - '0';
-			int y = stoi(filename.substr(index1 + 1, index2 - 1));
-			int z = stoi(filename.substr(index2 + 1, index3 - 1));
-			TableInfo table = parseTable(path);
-			tables[x - 1][y - 1][z - 1] = table;
-		}
-
-		//lcmInfo->append("LCM info loaded");
-		setLCMLayout();
-		return true;
+bool MainWindow::loadLCMInfo(QString dir)
+{
+	QStringList filepaths;
+	QDirIterator it(dir, QStringList() << "*.table", QDir::Files, QDirIterator::Subdirectories);
+	if (!it.hasNext())
+	{
+		QMessageBox::StandardButton msg;
+		msg = QMessageBox::critical(this, "Error!", "Can't find *.table files.", QMessageBox::Ok);
+		return false;
 	}
+
+	tables = new TableInfo**[3];
+	for (int i = 0; i < 3; i++) {
+		tables[i] = new TableInfo*[32];
+		for (int j = 0; j < 32; j++) {
+			tables[i][j] = new TableInfo[32];
+		}
+	}
+
+	while (it.hasNext())
+	{
+		it.next();
+		string filename = it.fileName().toStdString();
+		string filepath = it.filePath().toStdString();	// path + name
+		size_t index1 = filename.find("_");
+		size_t index2 = filename.find("-");
+		size_t index3 = filename.find(".");
+		int x = filename.at(index1 - 1) - '0';
+		int y = stoi(filename.substr(index1 + 1, index2 - 1));
+		int z = stoi(filename.substr(index2 + 1, index3 - 1));
+		tables[x - 1][y - 1][z - 1] = parseTable(filepath);
+	}
+	setLCMLayout();
+	return true;
 }
 
 TableInfo MainWindow::parseTable(string filename) {
@@ -471,6 +480,7 @@ TableInfo MainWindow::parseTable(string filename) {
 		int j = 0;
 		char* token = NULL;
 		char s[] = " \t";
+		bool isProcessed = false;
 
 		while (myfile.getline(line, 255)) {
 			switch (printline) {
@@ -512,22 +522,30 @@ TableInfo MainWindow::parseTable(string filename) {
 			}
 			if (strstr(line, "Conc.")) { printline = 1; }
 			if (strstr(line, "$$MISC")) { printline = 2; }
-			if (strstr(line, "FWHM")) { printline = 0; }
+			if (strstr(line, "FWHM"))
+			{
+				printline = 0;
+				isProcessed = true;
+			}
 		}
 		myfile.close();
+		if (!isProcessed)	// process error
+		{
+			table.fwhm = -1;
+			table.snr = -1;
+		}		
 	}
 	return table;
 }
 
 void MainWindow::presentLCMInfo() {
-	int a, b, c;
 	QString info_str;
 	map<string, Metabolite>::iterator metaPos;
 
-	a = (selectedVoxel - 1) / 1024;
-	b = fmod((selectedVoxel - 1), 1024) / 32;
-	c = fmod(fmod((selectedVoxel - 1), 1024), 32);
-	
+	auto abc = n2abc(selectedVoxel);
+	int a = get<0>(abc);
+	int b = get<1>(abc);
+	int c = get<2>(abc);
 	TableInfo temp = tables[a][b][c];
 	
 	info_str.append("<qt><style>.mytable{ border-collapse:collapse; }");
@@ -551,7 +569,7 @@ void MainWindow::presentLCMInfo() {
 	*/
 	info_str.append("</table></qt>");
 	
-	lcmInfo->setText(QString::fromStdString("slab: " + std::to_string(a+1) + ", " + std::to_string(b+1) + ", " + std::to_string(c+1)));
+	lcmInfo->setText(QString::fromStdString("slab: " + std::to_string(a+1) + ", " + std::to_string(b+1) + ", " + std::to_string(c+1) + " (" + to_string(selectedVoxel) + ")"));
 	lcmInfo->append(info_str);
 	lcmInfo->append("\n\nFWHM: " + QString::number(temp.fwhm));
 	lcmInfo->append("SNR: " + QString::number(temp.snr));
@@ -597,13 +615,13 @@ void MainWindow::drawPlane(int planeType){
 
 	if (!maskvol.empty())	// overlay mask image
 	{
-		initImages(planeType, slabimage);
-		overlayImage(T1Images[planeType], slabImages[planeType], planeType);
+		initImages(planeType, maskimage);
+		overlayImage(T1Images[planeType], maskImages[planeType], planeType);
 	}
 	else if (overlay == true)	// overlay slab image
 	{
-		initImages(planeType, maskimage);
-		overlayImage(T1Images[planeType], maskImages[planeType], planeType);
+		initImages(planeType, slabimage);
+		overlayImage(T1Images[planeType], slabImages[planeType], planeType);
 	}
 	else	// T1 image only
 		plane[planeType]->setPixmap(QPixmap::fromImage(T1Images[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
@@ -676,9 +694,12 @@ void MainWindow::initImages(int planeType, int imageType) {
 				case SAGITTAL: val = slabvol[sliceNum[planeType]][i][j]; break;
 				case AXIAL: val = slabvol[i][j][sliceNum[planeType]]; break;
 				}
-				if (val == 0) { value = qRgba(0, 0, 0, 0); }
-				else if (val == 1495) { value = qRgba(val*intensity, 0, val*intensity, 255); }
-				else { value = qRgba(val*intensity, val*intensity, 0, 255);}
+				if (val == 0)
+					value = qRgba(0, 0, 0, 0);
+				else if (val == selectedVoxel)
+					value = qRgba(val*intensity, 0, 0, 255);
+				else
+					value = qRgba(val*intensity, val*intensity, 0, 255);
 				slabImages[planeType].setPixel(i, height - j, value);
 			}
 		}
@@ -765,7 +786,10 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *e) {
 					val = getSlabVoxelValue((x - margin1)*width1 / width2, (y - margin2)*height1 / height2, planeType);
 
 					if (selectedVoxel == val)
+					{
+						selectedVoxel = 0;
 						voxelPick = false;
+					}
 					else
 					{
 						selectedVoxel = val;
@@ -876,41 +900,41 @@ void MainWindow::saveSlabMask(string metabolite) {
 	if (slabvol.empty()) { lcmInfo->setText("slabvol is empty, cannot init mask image size"); }
 
 	vec3df imagevol = slabvol;
-	float slabval = 0;
-
 	const size_t dimX = slabvol.size();
 	const size_t dimY = slabvol[0].size();
 	const size_t dimZ = slabvol[0][0].size();
 
-//	imagevol.resize(dim_X);
-//	for (int i = 0; i < dim_X; i++) {
-//		imagevol[i].resize(dim_Y);
-//		for (int j = 0; j < dim_Y; j++) {
-//			imagevol[i][j].resize(dim_Z);
-//		}
-//	}
-
 	for (int i = 0; i < dimX; i++) {
 		for (int j = 0; j < dimY; j++) {
 			for (int k = 0; k < dimZ; k++) {
-				slabval = slabvol[i][j][k];
-				if (slabval == -1 || slabval == 0) { imagevol[i][j][k] = 0; }
-				else {
-					int a = (slabval - 1) / 1024;
-					int b = fmod((slabval - 1), 1024) / 32;
-					int c = fmod(fmod((slabval - 1), 1024), 32);
+				if (slabvol[i][j][k] != 0)
+				{
+					auto abc = n2abc(slabvol[i][j][k]);
+					int a = get<0>(abc);
+					int b = get<1>(abc);
+					int c = get<2>(abc);
 
 					map<string, Metabolite>::iterator tempPos = tables[a][b][c].metaInfo.find(metabolite);
-					if (tempPos != tables[a][b][c].metaInfo.end()) {
-						if (tempPos->second.qc) { imagevol[i][j][k] = 1; }
-						else { imagevol[i][j][k] = 0; }
+					if (tables[a][b][c].fwhm == -1)
+						imagevol[i][j][k] = 0;
+					else
+					{
+						if (tempPos != tables[a][b][c].metaInfo.end()) {
+							if (tempPos->second.qc)
+							{
+								imagevol[i][j][k] = 1;
+								//imagevol[i][j][k] = tempPos->second.conc;
+							}
+							else
+								imagevol[i][j][k] = 0;
+						}
 					}
 				}
 			}
 		}
 	}
-
-	saveImageFile(getMaskFileName().toStdString(), img, imagevol);
+	
+	saveImageFile(getMaskFileName(metabolite).toStdString(), img, imagevol);
 	lcmInfo->append("save: slab mask image");
 }
 
@@ -934,6 +958,12 @@ float MainWindow::calAvgConc(string metabolite) {
 	}
 
 	return (sum/count);
+}
+
+void MainWindow::calPVC()
+{
+
+
 }
 
 vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordFH, float coordRL, float angleAP, float angleFH, float angleRL)
@@ -1121,10 +1151,11 @@ QString MainWindow::getSlabFileName()
 	return (f.absolutePath() + "/" + f.baseName() + "_slab." + f.completeSuffix());
 }
 
-QString MainWindow::getMaskFileName()
+QString MainWindow::getMaskFileName(string metabolite)
 {
 	QFileInfo f(imgFileName);
-	return (f.absolutePath() + "/" + f.baseName() + "_mask." + f.completeSuffix()); // further work -- "_(metabolite name)"
+	//return (f.absolutePath() + "/" + f.baseName() + "_mask." + f.completeSuffix()); // further work -- "_(metabolite name)"
+	return (f.absolutePath() + "/" + f.baseName() + "_mask_" + QString::fromStdString(metabolite) + "." + f.completeSuffix());
 }
 
 float MainWindow::getMaxVal(vec3df imagevol)
@@ -1138,4 +1169,12 @@ float MainWindow::getMaxVal(vec3df imagevol)
 		}
 	}
 	return maxval;
+}
+
+tuple<int, int, int> MainWindow::n2abc(int n)
+{
+	int a = (n - 1) / 1024;
+	int b = fmod((n - 1), 1024) / 32;
+	int c = fmod(fmod((n - 1), 1024), 32);
+	return make_tuple(a, b, c);
 }
