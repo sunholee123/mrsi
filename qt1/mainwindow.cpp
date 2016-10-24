@@ -64,19 +64,6 @@ MainWindow::MainWindow()
 
 	// LCModel info layout
 	lcmLayout = new QVBoxLayout;
-	/*
-	QLabel *lcmInfoTitle = new QLabel("<font color='black'>MRSI Chemical Information</font>");
-	lcmInfoTitle->setFixedWidth(planeSize);
-	lcmInfoTitle->setAlignment(Qt::AlignHCenter);
-
-	lcmInfo = new QTextEdit;
-	lcmInfo->setReadOnly(true);
-	lcmInfo->setText("Please Load LCM process result files");
-
-	lcmLayout->addWidget(lcmInfoTitle);
-	lcmLayout->addWidget(lcmInfo);
-	*/
-
 	setLCMLayout();
 	mainLayout->addLayout(viewerLayout);
 	mainLayout->addLayout(lcmLayout);
@@ -97,32 +84,58 @@ MainWindow::~MainWindow()
 // not fully implemented : problem with height, add buttons etc.
 void MainWindow::setLCMLayout() {
 	if (metaList.isEmpty()) {
-		QLabel *lcmInfoTitle = new QLabel("<font color='black'>MRSI Chemical Information</font>");
-		lcmInfoTitle->setFixedWidth(planeSize);
-		lcmInfoTitle->setAlignment(Qt::AlignHCenter);
+		lcmInfoBox = new QGroupBox(tr("MRSI Chemical Information"));
+		lcmInfoBox->setAlignment(Qt::AlignHCenter);
+		lcmInfoBox->setFixedWidth(300);
+
+		QLabel *lcmMessage = new QLabel("<font color='black'>Please Load LCM process result files</font>");
+		lcmMessage->setAlignment(Qt::AlignCenter);
+
+		QVBoxLayout *vbox = new QVBoxLayout;
+		vbox->addWidget(lcmMessage);
+		lcmInfoBox->setLayout(vbox);
+
+		lcmLayout->addWidget(lcmInfoBox);
+	}
+	else { // LCM info loaded
+		lcmInfoBox->setHidden(true);
+		
+		QGroupBox *metabolitesBox = new QGroupBox(tr("select metabolites need to be analyzed"));
+		metabolitesBox->setAlignment(Qt::AlignHCenter);
+		metabolitesBox->setFixedWidth(300);
+		
+		QGridLayout *gbox = new QGridLayout;
+		QButtonGroup *group = new QButtonGroup();
+		group->setExclusive(false);
+		int j = 0;
+		for (int i = 0; i < metaList.size(); i++) {
+			if (i % 2 == 0) {
+				j += 1;
+			}
+			QCheckBox *metaBox = new QCheckBox();
+			metaBox->setText(metaList[i]);
+			gbox->addWidget(metaBox,j,i%2);
+			group->addButton(metaBox);
+		}
+		QPushButton *calAvgConButton = new QPushButton("Calculate Avg. Conc.");
+		QPushButton *partVolCorrButton = new QPushButton("Partial Vol. Corr.");
+		gbox->addWidget(calAvgConButton, j + 1, 0);
+		gbox->addWidget(partVolCorrButton, j + 1, 1);
+		connect(group, SIGNAL(buttonClicked(QAbstractButton*)), this, SLOT(updateMetaChecked(QAbstractButton*)));
+
+		metabolitesBox->setLayout(gbox);
 
 		lcmInfo = new QTextEdit;
 		lcmInfo->setReadOnly(true);
-		lcmInfo->setText("Please Load LCM process result files");
 
-		lcmLayout->addWidget(lcmInfoTitle);
+		lcmLayout->addWidget(metabolitesBox);
 		lcmLayout->addWidget(lcmInfo);
 	}
-	else { // LCM info loaded
-		//lcmLayout->removeWidget(lcmInfo);
-		lcmInfo->hide();
+}
 
-		QGroupBox *metabolitesBox = new QGroupBox(tr("select metabolites need to be analyzed"));
-		QVBoxLayout *vbox = new QVBoxLayout;
-		for (int i = 0; i < metaList.size(); i++) {
-			QCheckBox *metaBox = new QCheckBox();
-			metaBox->setText(metaList[i]);
-			vbox->addWidget(metaBox);
-			//connect()
-		}
-		metabolitesBox->setLayout(vbox);
-		lcmLayout->addWidget(metabolitesBox);
-	}
+void MainWindow::updateMetaChecked(QAbstractButton* button) {
+	if (button->isChecked()) { lcmInfo->append(button->text()); }
+	else { lcmInfo->append("unchecked"); }
 }
 
 void MainWindow::setEnabledT1DepMenus(bool enabled)
@@ -899,6 +912,28 @@ void MainWindow::saveSlabMask(string metabolite) {
 
 	saveImageFile(getMaskFileName().toStdString(), img, imagevol);
 	lcmInfo->append("save: slab mask image");
+}
+
+float MainWindow::calAvgConc(string metabolite) {
+	float sum = 0;
+	int count = 0;
+
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 32; j++) {
+			for (int k = 0; k < 32; k++) {
+				map<string, Metabolite>::iterator tempPos;
+				tempPos = tables[i][j][k].metaInfo.find(metabolite);
+				if (tempPos != tables[i][j][k].metaInfo.end()) {
+					if (tempPos->second.qc){ 
+						count++; 
+						sum += tempPos->second.conc;
+					}
+				}
+			}
+		}
+	}
+
+	return (sum/count);
 }
 
 vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordFH, float coordRL, float angleAP, float angleFH, float angleRL)
