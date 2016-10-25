@@ -117,11 +117,15 @@ void MainWindow::setLCMLayout() {
 			gbox->addWidget(metaBox,j,i%2);
 			group->addButton(metaBox);
 		}
-		QPushButton *calAvgConButton = new QPushButton("Calculate Avg. Conc.");
-		QPushButton *partVolCorrButton = new QPushButton("Partial Vol. Corr.");
-		gbox->addWidget(calAvgConButton, j + 1, 0);
-		gbox->addWidget(partVolCorrButton, j + 1, 1);
 		connect(group, SIGNAL(buttonClicked(QAbstractButton*)), this, SLOT(updateMetaChecked(QAbstractButton*)));
+
+		QPushButton *calAvgConButton = new QPushButton("Calculate Avg. Conc.");
+		gbox->addWidget(calAvgConButton, j + 1, 0);
+
+		// partial volume correction button
+		QPushButton *pvcButton = new QPushButton("Partial Vol. Corr.");
+		gbox->addWidget(pvcButton, j + 1, 1);
+		connect(pvcButton, SIGNAL(released()), this, SLOT(calPVC()));
 
 		metabolitesBox->setLayout(gbox);
 
@@ -474,7 +478,7 @@ TableInfo MainWindow::parseTable(string filename) {
 	int printline = 0;
 	TableInfo table;
 
-	std::ifstream myfile(filename);
+	ifstream myfile(filename);
 	if (myfile.is_open()) {
 		int i = 0;
 		int j = 0;
@@ -542,20 +546,17 @@ void MainWindow::presentLCMInfo() {
 	QString info_str;
 	map<string, Metabolite>::iterator metaPos;
 
-	auto abc = n2abc(selectedVoxel);
-	int a = get<0>(abc);
-	int b = get<1>(abc);
-	int c = get<2>(abc);
-	TableInfo temp = tables[a][b][c];
+	coord abc = n2abc(selectedVoxel);
+	TableInfo temp = tables[abc.a][abc.b][abc.c];
 	
 	info_str.append("<qt><style>.mytable{ border-collapse:collapse; }");
 	info_str.append(".mytable th, .mytable td { border:5px solid black; }</style>");
 	info_str.append("<table class=\"mytable\"><tr><th>Metabolite</th><th>Conc.</th><th>%SD</th><th>/Cr</th></tr>");
 	for (metaPos = temp.metaInfo.begin(); metaPos != temp.metaInfo.end(); ++metaPos) {
 		string s1 = "<tr><td>" + metaPos->first + "</td>";
-		string s2 = "<td>" + std::to_string(metaPos->second.conc) + "</td>";
-		string s3 = "<td>" + std::to_string(metaPos->second.sd) + "</td>";
-		string s4 = "<td>" + std::to_string(metaPos->second.ratio) + "</td></tr>";
+		string s2 = "<td>" + to_string(metaPos->second.conc) + "</td>";
+		string s3 = "<td>" + to_string(metaPos->second.sd) + "</td>";
+		string s4 = "<td>" + to_string(metaPos->second.ratio) + "</td></tr>";
 		info_str.append(QString::fromStdString(s1 + s2 + s3 + s4));
 	}
 	/*
@@ -569,7 +570,7 @@ void MainWindow::presentLCMInfo() {
 	*/
 	info_str.append("</table></qt>");
 	
-	lcmInfo->setText(QString::fromStdString("slab: " + std::to_string(a+1) + ", " + std::to_string(b+1) + ", " + std::to_string(c+1) + " (" + to_string(selectedVoxel) + ")"));
+	lcmInfo->setText(QString::fromStdString("slab: " + to_string(abc.a +1) + ", " + to_string(abc.b+1) + ", " + to_string(abc.c+1) + " (" + to_string(selectedVoxel) + ")"));
 	lcmInfo->append(info_str);
 	lcmInfo->append("\n\nFWHM: " + QString::number(temp.fwhm));
 	lcmInfo->append("SNR: " + QString::number(temp.snr));
@@ -577,41 +578,7 @@ void MainWindow::presentLCMInfo() {
 
 /***** draw and update planes *****/
 void MainWindow::drawPlane(int planeType){
-	/*
-	int width, height;
-	switch(planeType){
-		case CORONAL:	width = img->nx();	height = img->nz();	break;
-		case SAGITTAL:	width = img->ny();	height = img->nz();	break;
-		case AXIAL:		width = img->nx();	height = img->ny();	break;
-	}
-
-	QImage slice(width, height, QImage::Format_RGB32);
-	QRgb value;
-	float val;
-	for (int i = 0; i<width; i++)
-		for (int j = 0; j<height; j++)
-		{
-			switch (planeType){
-				case CORONAL: val = T1vol[i][sliceNum[planeType]][j]; break;
-				case SAGITTAL: val = T1vol[sliceNum[planeType]][i][j]; break;
-				case AXIAL: val = T1vol[i][j][sliceNum[planeType]]; break;
-			}
-			val = val * intensity;
-			value = qRgb(val, val, val);
-			slice.setPixel(i, height-j, value);
-		}
-	*/
-
 	initImages(planeType, t1image);
-/*
-	if (voxelPick == true)
-		changeVoxelValues(selectedVoxel, true);
-	else
-	{
-		changeVoxelValues(selectedVoxel, false);
-		selectedVoxel = -1;
-	}
-*/
 
 	if (!maskvol.empty())	// overlay mask image
 	{
@@ -625,10 +592,6 @@ void MainWindow::drawPlane(int planeType){
 	}
 	else	// T1 image only
 		plane[planeType]->setPixmap(QPixmap::fromImage(T1Images[planeType].scaled(planeSize, planeSize, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
-	
-
-	//if (mask == true) { overlayImage(T1Images[planeType], maskImages[planeType], planeType); }
-	//else { overlayImage(T1Images[planeType], slabImages[planeType], planeType); }	
 }
 
 void MainWindow::overlayImage(QImage base, QImage overlay, int planeType) {
@@ -762,7 +725,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *e) {
 		QMouseEvent *event = (QMouseEvent*)e;
 
 		if (event->button() == Qt::LeftButton) {
-			if (overlay == true) { // get mouse event only when slab overlayed
+			if (overlay) { // get mouse event only when slab overlayed
 				if ((QLabel*)watched == plane[CORONAL] || (QLabel*)watched == plane[SAGITTAL] || (QLabel*)watched == plane[AXIAL]) { // and mouse event occured in plane
 					int x = event->x();
 					int y = event->y();
@@ -783,24 +746,22 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *e) {
 					if (width2 < planeSize) { margin1 = (planeSize - width2) / 2; }
 					if (height2 < planeSize) { margin2 = (planeSize - height2) / 2; }
 
-					val = getSlabVoxelValue((x - margin1)*width1 / width2, (y - margin2)*height1 / height2, planeType);
-
-					if (selectedVoxel == val)
+					int a = (x - margin1)*width1 / width2;
+					int b = (y - margin2)*height1 / height2;
+					if ((a > 0) && (a < width1) && (b > 0) && (b < height1))
 					{
-						selectedVoxel = 0;
-						voxelPick = false;
-					}
-					else
-					{
-						selectedVoxel = val;
-						voxelPick = true;
+						val = getSlabVoxelValue(a, b, planeType);
+						if (selectedVoxel == val)
+							selectedVoxel = 0;
+						else
+							selectedVoxel = val;
 					}
 				}
 			}
 		}
 	}
 	else if (e->type() == QEvent::MouseButtonRelease) {
-		if (overlay == true) { // get mouse event only when slab overlayed
+		if (overlay) { // get mouse event only when slab overlayed
 			if ((QLabel*)watched == plane[CORONAL] || (QLabel*)watched == plane[SAGITTAL] || (QLabel*)watched == plane[AXIAL]) { // and mouse event occured in plane
 				drawPlane(CORONAL);
 				drawPlane(SAGITTAL);
@@ -909,17 +870,13 @@ void MainWindow::saveSlabMask(string metabolite) {
 			for (int k = 0; k < dimZ; k++) {
 				if (slabvol[i][j][k] != 0)
 				{
-					auto abc = n2abc(slabvol[i][j][k]);
-					int a = get<0>(abc);
-					int b = get<1>(abc);
-					int c = get<2>(abc);
-
-					map<string, Metabolite>::iterator tempPos = tables[a][b][c].metaInfo.find(metabolite);
-					if (tables[a][b][c].fwhm == -1)
+					coord abc = n2abc(slabvol[i][j][k]);
+					if (tables[abc.a][abc.b][abc.c].fwhm == -1)
 						imagevol[i][j][k] = 0;
 					else
 					{
-						if (tempPos != tables[a][b][c].metaInfo.end()) {
+						map<string, Metabolite>::iterator tempPos = tables[abc.a][abc.b][abc.c].metaInfo.find(metabolite);
+						if (tempPos != tables[abc.a][abc.b][abc.c].metaInfo.end()) {
 							if (tempPos->second.qc)
 							{
 								imagevol[i][j][k] = 1;
@@ -962,8 +919,58 @@ float MainWindow::calAvgConc(string metabolite) {
 
 void MainWindow::calPVC()
 {
+	struct segvals	{
+		float gm, wm, csf;
+		float f_gm, f_wm, f_csf;	// volume fractions
+	};
 
+	// initialize gm, wm and csf values
+	segvals ***s;
+	s = new segvals**[3];
+	for (int i = 0; i < 3; i++) {
+		s[i] = new segvals*[32];
+		for (int j = 0; j < 32; j++) {
+			s[i][j] = new segvals[32];
+			for (int k = 0; k < 32; k++) {
+				s[i][j][k].gm = 0;
+				s[i][j][k].wm = 0;
+				s[i][j][k].csf = 0;
+			}
+		}
+	}
+	
+	// get segmentation information by voxel
+	const size_t dimX = slabvol.size();
+	const size_t dimY = slabvol[0].size();
+	const size_t dimZ = slabvol[0][0].size();
 
+	for (int i = 0; i < dimX; i++) {
+		for (int j = 0; j < dimY; j++) {
+			for (int k = 0; k < dimZ; k++) {
+				if (slabvol[i][j][k] != 0)
+				{
+					coord abc = n2abc(slabvol[i][j][k]);
+					s[abc.a][abc.b][abc.c].gm += gmvol[i][j][k];
+					s[abc.a][abc.b][abc.c].wm += wmvol[i][j][k];
+					s[abc.a][abc.b][abc.c].csf += csfvol[i][j][k];
+				}
+			}
+		}
+	}
+	// calculate volume fractions
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 32; j++) {
+			for (int k = 0; k < 32; k++) {
+				float total = s[i][j][k].gm + s[i][j][k].wm + s[i][j][k].csf;
+				float f_gm = s[i][j][k].gm / total;
+				float f_wm = s[i][j][k].wm / total;
+				float f_csf = s[i][j][k].csf / total;
+
+				// calculate partial volume corection values
+				tables[i][j][k].pvc = (43300 * f_gm + 35880 * f_wm + 55556 * f_csf) / ((1 - f_csf) * 35880);
+			}
+		}
+	}
 }
 
 vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordFH, float coordRL, float angleAP, float angleFH, float angleRL)
@@ -1171,10 +1178,11 @@ float MainWindow::getMaxVal(vec3df imagevol)
 	return maxval;
 }
 
-tuple<int, int, int> MainWindow::n2abc(int n)
+coord MainWindow::n2abc(int n)
 {
-	int a = (n - 1) / 1024;
-	int b = fmod((n - 1), 1024) / 32;
-	int c = fmod(fmod((n - 1), 1024), 32);
-	return make_tuple(a, b, c);
+	coord temp;
+	temp.a = (n - 1) / 1024;
+	temp.b = fmod((n - 1), 1024) / 32;
+	temp.c = fmod(fmod((n - 1), 1024), 32);
+	return temp;
 }

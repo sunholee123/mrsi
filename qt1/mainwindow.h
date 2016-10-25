@@ -53,7 +53,12 @@ struct TableInfo {
 	map<string, Metabolite> metaInfo;
 	float fwhm;
 	int snr;
-	float gm, wm, csf;
+	float pvc;
+};
+
+struct coord
+{
+	int a, b, c;
 };
 
 class QAction;
@@ -84,6 +89,7 @@ public:
 	void makeSlabMask();
 	void valueUpdateIntensity(int value);
 	void updateMetaChecked(QAbstractButton*);
+	void calPVC();
 
 private:
 	QWidget *mainWidget;
@@ -147,7 +153,6 @@ private:
 
 	// Draw and update planes
 	bool overlay = false;
-	bool voxelPick = false;
 	float selectedVoxel = 0;
 
 	void drawPlane(int planeType);
@@ -187,9 +192,8 @@ private:
 	// Partial Volume Correction
 	NiftiImage *img_seg = NULL;
 	vec3df gmvol, wmvol, csfvol;
-	void calPVC();
 
-	tuple<int, int, int> n2abc(int n);
+	coord n2abc(int n);
 };
 
 #endif
