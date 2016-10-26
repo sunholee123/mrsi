@@ -121,11 +121,12 @@ void MainWindow::setLCMLayout() {
 
 		QPushButton *calAvgConButton = new QPushButton("Calculate Avg. Conc.");
 		gbox->addWidget(calAvgConButton, j + 1, 0);
-
+		/*
 		// partial volume correction button
 		QPushButton *pvcButton = new QPushButton("Partial Vol. Corr.");
 		gbox->addWidget(pvcButton, j + 1, 1);
 		connect(pvcButton, SIGNAL(released()), this, SLOT(calPVC()));
+		*/
 
 		metabolitesBox->setLayout(gbox);
 
@@ -222,15 +223,16 @@ void MainWindow::loadSegImgs()
 	QString wmFileName = f.absolutePath() + "/struc/" + f.baseName() + "_struc_brain_pve_2.nii.gz";
 	QString csfFileName = f.absolutePath() + "/struc/" + f.baseName() + "_struc_brain_pve_0.nii.gz";
 
-	img_seg = new NiftiImage(gmFileName.toStdString(), 'r');
-	gmvol = getImgvol(img_seg);
-	delete img_seg;
-	img_seg = new NiftiImage(wmFileName.toStdString(), 'r');
-	wmvol = getImgvol(img_seg);
-	delete img_seg;
-	img_seg = new NiftiImage(csfFileName.toStdString(), 'r');
-	csfvol = getImgvol(img_seg);;
-	delete img_seg;
+	vec3df gmvol, wmvol, csfvol;
+	NiftiImage gmimg = NiftiImage(gmFileName.toStdString(), 'r');
+	NiftiImage wmimg = NiftiImage(wmFileName.toStdString(), 'r');
+	NiftiImage csfimg = NiftiImage(csfFileName.toStdString(), 'r');
+	gmvol = getImgvol(&gmimg);
+	wmvol = getImgvol(&wmimg);
+	csfvol = getImgvol(&csfimg);
+
+	// calculate PVC value automatically
+	calPVC(gmvol, wmvol, csfvol);
 }
 
 void MainWindow::makeSlabMask() {
@@ -268,7 +270,8 @@ void MainWindow::makeSlabMask() {
 		int sd = sdInput->text().toInt();
 		float fwhm = fwhmInput->text().toFloat();
 		int snr = -1;
-		if (!snrInput->text().isEmpty()) { snr = snrInput->text().toInt(); }
+		if (!snrInput->text().isEmpty())
+			snr = snrInput->text().toInt();
 
 		voxelQualityCheck(metabolite, sd, fwhm, snr);
 		saveSlabMask(metabolite);
@@ -281,7 +284,7 @@ void MainWindow::openLCM() {
 	if (dialog.exec() == QDialog::Accepted) {
 		loadLCMInfo(dialog.selectedFiles().first());
 	}
-
+	saveLCMData();
 }
 
 /***** load MRI image *****/
@@ -529,15 +532,10 @@ TableInfo MainWindow::parseTable(string filename) {
 			if (strstr(line, "FWHM"))
 			{
 				printline = 0;
-				isProcessed = true;
+				table.isAvailable = true;
 			}
 		}
 		myfile.close();
-		if (!isProcessed)	// process error
-		{
-			table.fwhm = -1;
-			table.snr = -1;
-		}		
 	}
 	return table;
 }
@@ -767,7 +765,8 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *e) {
 				drawPlane(SAGITTAL);
 				drawPlane(AXIAL);
 
-				if (tables != NULL && selectedVoxel) { presentLCMInfo(); }
+				if (tables != NULL && selectedVoxel)
+					presentLCMInfo();
 			}
 		}
 	}
@@ -837,18 +836,19 @@ void MainWindow::voxelQualityCheck(string metabolite, int sd, float fwhm, int sn
 		for (int i = 0; i < 3; i++) {
 			for (int j = 0; j < 32; j++) {
 				for (int k = 0; k < 32; k++) {
-					map<string, Metabolite>::iterator tempPos;
-					tempPos = tables[i][j][k].metaInfo.find(metabolite);
-					if (tempPos != tables[i][j][k].metaInfo.end()) {
-						if (tempPos->second.sd > sd || tables[i][j][k].fwhm > fwhm || tables[i][j][k].snr < snr) {
-							tempPos->second.qc = false;
+					if (tables[i][j][k].isAvailable)
+					{
+						map<string, Metabolite>::iterator tempPos;
+						tempPos = tables[i][j][k].metaInfo.find(metabolite);
+						if (tempPos != tables[i][j][k].metaInfo.end()) {
+							if (tempPos->second.sd > sd || tables[i][j][k].fwhm > fwhm || tables[i][j][k].snr < snr)
+								tempPos->second.qc = false;
+							else
+								tempPos->second.qc = true;
 						}
 						else {
-							tempPos->second.qc = true;
+							// exception -- metabolite not found
 						}
-					}
-					else {
-						// exception -- metabolite not found
 					}
 				}
 			}
@@ -917,13 +917,11 @@ float MainWindow::calAvgConc(string metabolite) {
 	return (sum/count);
 }
 
-void MainWindow::calPVC()
+void MainWindow::calPVC(vec3df gmvol, vec3df wmvol, vec3df csfvol)
 {
 	struct segvals	{
 		float gm, wm, csf;
-		float f_gm, f_wm, f_csf;	// volume fractions
 	};
-
 	// initialize gm, wm and csf values
 	segvals ***s;
 	s = new segvals**[3];
@@ -938,7 +936,6 @@ void MainWindow::calPVC()
 			}
 		}
 	}
-	
 	// get segmentation information by voxel
 	const size_t dimX = slabvol.size();
 	const size_t dimY = slabvol[0].size();
@@ -958,14 +955,23 @@ void MainWindow::calPVC()
 		}
 	}
 	// calculate volume fractions
+	float mrsiVoxSizeX = 6.875;
+	float mrsiVoxSizeY = 6.875;
+	float mrsiVoxSizeZ = 15;
+	float mrsiVoxVolume = mrsiVoxSizeX * mrsiVoxSizeY * mrsiVoxSizeZ;
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 32; j++) {
 			for (int k = 0; k < 32; k++) {
 				float total = s[i][j][k].gm + s[i][j][k].wm + s[i][j][k].csf;
+				// qc: pvc = 0 if an mrsi voxel is not included in the brain
+				if (total < (mrsiVoxVolume * 0.8))	// 80%
+				{
+					tables[i][j][k].isAvailable = false;
+					continue;
+				}
 				float f_gm = s[i][j][k].gm / total;
 				float f_wm = s[i][j][k].wm / total;
 				float f_csf = s[i][j][k].csf / total;
-
 				// calculate partial volume corection values
 				tables[i][j][k].pvc = (43300 * f_gm + 35880 * f_wm + 55556 * f_csf) / ((1 - f_csf) * 35880);
 			}
@@ -1185,4 +1191,45 @@ coord MainWindow::n2abc(int n)
 	temp.b = fmod((n - 1), 1024) / 32;
 	temp.c = fmod(fmod((n - 1), 1024), 32);
 	return temp;
+}
+
+void MainWindow::saveLCMData()
+{
+	QFileInfo f(imgFileName);
+	QString lcmFileName = f.absolutePath() + "/" + f.baseName() + ".lcm";
+	QFile file(lcmFileName);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+	{
+		QMessageBox::StandardButton msg;
+		msg = QMessageBox::critical(this, "Error!", "LCM File Creation Failed.", QMessageBox::Ok);
+		return;
+	}
+	QTextStream out(&file);
+
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 32; j++) {
+			for (int k = 0; k < 32; k++) {
+				// need to optimize (too many file operations now...)
+				out << (i + 1) << "\t" << (j + 1) << "\t" << (k + 1) << "\t";
+				if (tables[i][j][k].isAvailable)
+				{
+					string str = "";
+					map<string, Metabolite>::iterator metaPos;
+					for (metaPos = tables[i][j][k].metaInfo.begin(); metaPos != tables[i][j][k].metaInfo.end(); metaPos++) {
+						
+						out << QString::fromStdString(metaPos->second.name) << "\t"
+							<< metaPos->second.conc << "\t"
+							<< metaPos->second.sd << "\t"
+							<< metaPos->second.ratio << "\t";
+					}
+					out << tables[i][j][k].fwhm << "\t" << tables[i][j][k].snr << "\n";
+				}
+				else
+				{
+					out << "LCM process failed.\n";
+				}
+			}
+		}
+	}
+
 }

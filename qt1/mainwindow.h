@@ -54,6 +54,7 @@ struct TableInfo {
 	float fwhm;
 	int snr;
 	float pvc;
+	bool isAvailable = false;
 };
 
 struct coord
@@ -89,7 +90,6 @@ public:
 	void makeSlabMask();
 	void valueUpdateIntensity(int value);
 	void updateMetaChecked(QAbstractButton*);
-	void calPVC();
 
 private:
 	QWidget *mainWidget;
@@ -150,6 +150,7 @@ private:
 	bool loadLCMInfo(QString dir); //bool loadLCMInfo(QStringList filepaths);
 	TableInfo parseTable(string filename);
 	void presentLCMInfo();
+	void saveLCMData();
 
 	// Draw and update planes
 	bool overlay = false;
@@ -189,9 +190,8 @@ private:
 	float* arr3Dto1D(NiftiImage *image, vec3df imagevol);
 	bool saveImageFile(string filename, NiftiImage *image, vec3df data);
 
-	// Partial Volume Correction
-	NiftiImage *img_seg = NULL;
-	vec3df gmvol, wmvol, csfvol;
+	// Partial volume correction
+	void calPVC(vec3df gmvol, vec3df wmvol, vec3df csfvol);
 
 	coord n2abc(int n);
 };
