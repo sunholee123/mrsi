@@ -186,6 +186,11 @@ void MainWindow::open()
 	QFileInfo f(getSlabFileName());
 	if (f.exists() && f.isFile())
 		loadSlab(getSlabFileName());
+
+	// if the lcm data file exists, then load it
+	f = QFileInfo(getLCMFileName());
+	if (f.exists() && f.isFile())
+		readLCMData();
 }
 
 void MainWindow::openSlab() {
@@ -1195,9 +1200,7 @@ coord MainWindow::n2abc(int n)
 
 void MainWindow::saveLCMData()
 {
-	QFileInfo f(imgFileName);
-	QString lcmFileName = f.absolutePath() + "/" + f.baseName() + ".lcm";
-	QFile file(lcmFileName);
+	QFile file(getLCMFileName());
 	if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
 	{
 		QMessageBox::StandardButton msg;
@@ -1209,7 +1212,7 @@ void MainWindow::saveLCMData()
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 32; j++) {
 			for (int k = 0; k < 32; k++) {
-				// need to optimize (too many file operations now...)
+				// need to optimize?
 				out << (i + 1) << "\t" << (j + 1) << "\t" << (k + 1) << "\t";
 				if (tables[i][j][k].isAvailable)
 				{
@@ -1226,10 +1229,78 @@ void MainWindow::saveLCMData()
 				}
 				else
 				{
-					out << "LCM process failed.\n";
+					out << "-1\n";
 				}
 			}
 		}
 	}
 
+}
+
+void MainWindow::readLCMData()
+{
+	QFile file(getLCMFileName());
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		QMessageBox::StandardButton msg;
+		msg = QMessageBox::critical(this, "Error!", "LCM File Open Failed.", QMessageBox::Ok);
+		return;
+	}
+	QTextStream in(&file);
+
+	if (tables == NULL)
+	{
+		tables = new TableInfo**[3];
+		for (int i = 0; i < 3; i++) {
+			tables[i] = new TableInfo*[32];
+			for (int j = 0; j < 32; j++) {
+				tables[i][j] = new TableInfo[32];
+			}
+		}
+	}
+
+	while (!in.atEnd())
+	{
+		QString tempstr = in.readLine();
+		QStringList tokens;
+		tokens = tempstr.split("\t");
+
+		int a, b, c;
+		a = tokens[0].toInt() - 1;
+		b = tokens[1].toInt() - 1;
+		c = tokens[2].toInt() - 1;
+
+		if (tokens[3] == "-1")
+			tables[a][b][c].isAvailable = false;
+		else
+		{
+			tables[a][b][c].isAvailable = true;
+			int tokenLen = tokens.length();
+			int metaSize = (tokenLen - 3 - 2) / 4;
+			for (int i = 0; i < metaSize; i++)
+			{
+				Metabolite metainfo;
+				metainfo.name = tokens[3 + i * 4].toStdString();
+				metainfo.conc = tokens[4 + i * 4].toFloat();
+				metainfo.sd = tokens[5 + i * 4].toInt();
+				metainfo.ratio = tokens[6 + i * 4].toFloat();
+				metainfo.qc = true;
+				tables[a][b][c].metaInfo[metainfo.name] = metainfo;
+				if (metaList.empty() || !metaList.contains(QString::fromStdString(metainfo.name))) { // To-do: call routine just once
+					metaList.push_back(QString::fromStdString(metainfo.name));
+				}
+			}
+			tables[a][b][c].fwhm = tokens[tokenLen - 2].toFloat();
+			tables[a][b][c].snr = tokens[tokenLen - 1].toInt();
+		}
+	}
+	//saveLCMData();	// test for equality
+	setLCMLayout();
+}
+
+QString MainWindow::getLCMFileName()
+{
+	QFileInfo f(imgFileName);
+	return f.absolutePath() + "/" + f.baseName() + ".lcm";
+	
 }

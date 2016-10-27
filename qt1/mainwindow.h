@@ -151,6 +151,8 @@ private:
 	TableInfo parseTable(string filename);
 	void presentLCMInfo();
 	void saveLCMData();
+	void readLCMData();
+	QString getLCMFileName();
 
 	// Draw and update planes
 	bool overlay = false;
