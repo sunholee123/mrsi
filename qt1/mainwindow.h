@@ -90,6 +90,7 @@ public:
 	void makeSlabMask();
 	void valueUpdateIntensity(int value);
 	void updateMetaChecked(QAbstractButton*);
+	void calAvgButtonClicked();
 
 private:
 	QWidget *mainWidget;
@@ -179,6 +180,7 @@ private:
 	QString getMaskFileName(string metabolite);
 
 	// statistics
+	QStringList selMetaList;
 	float calAvgConc(string metabolite);
 
 	// Slab
