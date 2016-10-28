@@ -148,7 +148,7 @@ private:
 	QStringList metaList;
 
 	bool loadLCMInfo(QString dir); //bool loadLCMInfo(QStringList filepaths);
-	TableInfo parseTable(string filename);
+	TableInfo parseTable(string filename);  //TableInfo parseTable(QString filename);
 	void presentLCMInfo();
 	void saveLCMData();
 	void readLCMData();
