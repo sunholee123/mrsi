@@ -459,7 +459,8 @@ bool MainWindow::loadLCMInfo(QString dir)
 			tables[i][j] = new TableInfo[32];
 		}
 	}
-
+		QTime myTimer;
+		myTimer.start();
 	while (it.hasNext())
 	{
 		it.next();
@@ -473,66 +474,63 @@ bool MainWindow::loadLCMInfo(QString dir)
 		int z = stoi(filename.substr(index2 + 1, index3 - 1));
 		tables[x - 1][y - 1][z - 1] = parseTable(filepath);
 	}
+		statusBar()->showMessage(QString::number(myTimer.elapsed()));
 	setLCMLayout();
 	return true;
 }
 
 TableInfo MainWindow::parseTable(string filename) {
-	char line[255];
-	int printline = 0;
 	TableInfo table;
+	table.isAvailable = false;
 
+	char line[255];
 	ifstream myfile(filename);
 	if (myfile.is_open()) {
-		int i = 0;
-		int j = 0;
 		char* token = NULL;
 		char s[] = " \t";
-		bool isProcessed = false;
-
-		while (myfile.getline(line, 255)) {
-			switch (printline) {
-			case 0: // do not print or save to the slabinfo
-				break;
-			case 1: { // save metainfo
-				j = 0;
-				token = strtok(line, s);
-				Metabolite metainfo;
-				while (token != NULL && i < 35) {
-					if (j == 0) { metainfo.conc = stof(token); }
-					else if (j == 1) { metainfo.sd = stoi(token); }
-					else if (j == 2) { metainfo.ratio = stof(token); }
-					else if (j == 3) {
-						metainfo.name = token;
-						metainfo.qc = true;
-						table.metaInfo[metainfo.name] = metainfo;
-						if (metaList.empty() || !metaList.contains(QString::fromStdString(metainfo.name))) { // To-do: call routine just once 
-							metaList.push_back(QString::fromStdString(metainfo.name));
-						}
-					}
-					//table.metaInfo[i][j] = token;
-					token = strtok(NULL, s);
-					j++;
-				}
-				i++;
-				break;
-			}
-			case 2: // save fwhm, snr
-				j = 0;
-				token = strtok(line, s);
-				while (token != NULL) {
-					if (j == 2) { table.fwhm = stof(token); }
-					else if (j == 6) { table.snr = stoi(token); }
-					token = strtok(NULL, s);
-					j++;
-				}
-				break;
-			}
-			if (strstr(line, "Conc.")) { printline = 1; }
-			if (strstr(line, "$$MISC")) { printline = 2; }
-			if (strstr(line, "FWHM"))
+		while (myfile.getline(line, 255))
+		{
+			if (strstr(line, "Conc."))
 			{
-				printline = 0;
+				while (myfile.getline(line, 255))
+				{
+					Metabolite metainfo;
+					token = strtok(line, s);
+					if (token == NULL)	// the last of metabolite parts
+						break;
+					metainfo.conc = stof(token);
+					token = strtok(NULL, s);
+					metainfo.sd = stoi(token);
+					token = strtok(NULL, s);
+					// exception check (1.7E+03+MM17, 0.000-MM17,...)
+					QString tempstr = token;
+					QStringList t;
+					t = tempstr.split(QRegExp("[0-9][+-]"));
+					if (t.length() == 2)
+					{
+						//metainfo.ratio = stof(t[0].toStdString());
+						metainfo.ratio = stof(tempstr.left(t[0].length() + 1).toStdString());
+						metainfo.name = t[1].toStdString();
+					}
+					else
+					{
+						metainfo.ratio = stof(token);
+						token = strtok(NULL, s);
+						metainfo.name = token;
+					}
+					metainfo.qc = true;
+					table.metaInfo[metainfo.name] = metainfo;
+					if (metaList.empty() || !metaList.contains(QString::fromStdString(metainfo.name))) { // To-do: call routine just once 
+						metaList.push_back(QString::fromStdString(metainfo.name));
+					}
+				}
+			}
+			else if (strstr(line, "FWHM"))
+			{
+				token = strtok(line, "FWHM = ");
+				table.fwhm = stof(token);
+				token = strtok(NULL, " ppm    S/N =   ");
+				table.snr = stoi(token);
 				table.isAvailable = true;
 			}
 		}
@@ -541,6 +539,75 @@ TableInfo MainWindow::parseTable(string filename) {
 	return table;
 }
 
+/* Slow... T_T
+TableInfo MainWindow::parseTable(QString filename) {
+	QFile file(filename);
+	file.open(QIODevice::ReadOnly | QIODevice::Text);
+	QTextStream in(&file);
+
+	TableInfo table;
+	table.isAvailable = false;
+
+	while (!in.atEnd())
+	{
+		QString tempstr = in.readLine();
+		QStringList tokens;
+		tokens = tempstr.split(" ", QString::SkipEmptyParts);
+		if (tokens.isEmpty())
+			continue;
+
+		// CONC: metabolites
+		if (tokens[0] == "Conc.")
+		{
+			while (!in.atEnd())
+			{
+				QString tempstr = in.readLine();
+				tempstr = in.readLine();
+				QStringList tokens;
+				tokens = tempstr.split(" ", QString::SkipEmptyParts);
+				int tokenLen = tokens.length();
+				if (tokenLen == 4)
+				{
+					Metabolite metainfo;
+					metainfo.conc = tokens[0].toFloat();
+					metainfo.sd = tokens[1].left(tokens[1].length() - 1).toInt();
+					metainfo.ratio = tokens[2].toFloat();
+					metainfo.name = tokens[3].toStdString();
+					metainfo.qc = true;
+					table.metaInfo[metainfo.name] = metainfo;
+					if (metaList.empty() || !metaList.contains(QString::fromStdString(metainfo.name))) { // To-do: call routine just once
+						metaList.push_back(QString::fromStdString(metainfo.name));
+					}
+
+				}
+				else if (tokenLen == 0)
+				{
+					break;
+				}
+				else
+				{
+
+				}
+			}
+
+		}
+		// MISC: fwhm, snr
+		if (tokens[0] == "$$MISC")
+		{
+			QString tempstr = in.readLine();
+			tempstr = in.readLine();
+			QStringList tokens;
+			tokens = tempstr.split(" ", QString::SkipEmptyParts);
+
+			table.fwhm = tokens[2].toFloat();
+			table.snr = tokens[6].toInt();
+			table.isAvailable = true;
+		}
+	}
+
+	return table;
+}
+*/
 void MainWindow::presentLCMInfo() {
 	QString info_str;
 	map<string, Metabolite>::iterator metaPos;
@@ -1259,7 +1326,6 @@ void MainWindow::saveLCMData()
 			}
 		}
 	}
-
 }
 
 void MainWindow::readLCMData()
@@ -1319,7 +1385,7 @@ void MainWindow::readLCMData()
 			tables[a][b][c].snr = tokens[tokenLen - 1].toInt();
 		}
 	}
-	//saveLCMData();	// test for equality
+	saveLCMData();	// test for equality
 	setLCMLayout();
 }
 
