@@ -71,10 +71,16 @@ MainWindow::MainWindow()
 
 MainWindow::~MainWindow()
 {
-	if(img != NULL)
+	if (img != NULL)
+	{
+		img->close();
 		delete img;
+	}
 	if (slab != NULL)
+	{
+		slab->close();
 		delete slab;
+	}
 	if (!T1vol.empty())
 		T1vol = vec3df();
 	if (!slabvol.empty())
@@ -286,18 +292,24 @@ void MainWindow::makeSlabMask() {
 void MainWindow::openLCM() {
 	QFileDialog dialog(this, tr("Select Directory"));
 	dialog.setFileMode(QFileDialog::Directory);
-	if (dialog.exec() == QDialog::Accepted) {
-		loadLCMInfo(dialog.selectedFiles().first());
-	}
-	saveLCMData();
+	if (dialog.exec() == QDialog::Accepted && loadLCMInfo(dialog.selectedFiles().first()))
+		saveLCMData();
 }
 
-/***** load MRI image *****/
+/***** load T1 image *****/
 bool MainWindow::loadImageFile(const QString &fileName)
 {
 	// load mri image
-	if (overlay == true) { overlay = false; delete slab; }
-	if (img != NULL) { delete img; }
+	if (overlay == true)
+	{
+		overlay = false;
+//		delete slab;
+	}
+	if (img != NULL)
+	{
+		img->close();
+		delete img;
+	}
 
 	imgFileName = fileName;
 	string filename = fileName.toStdString();
@@ -429,13 +441,17 @@ bool MainWindow::findDicomFiles(QString dir)
 
 /***** load Slab image *****/
 bool MainWindow::loadSlab(const QString &fileName) {
-	if (slab != NULL) { delete slab; }
+	if (slab != NULL)
+	{
+		slab->close();
+		delete slab;
+	}
 
 	string filename = fileName.toStdString();
 	slab = new NiftiImage(filename, 'r');
 	slabvol = getImgvol(slab);
 
-overlay = true;
+	overlay = true;
 
 	drawPlane(CORONAL);
 	drawPlane(SAGITTAL);
@@ -543,75 +559,6 @@ TableInfo MainWindow::parseTable(string filename) {
 	return table;
 }
 
-/* Slow... T_T
-TableInfo MainWindow::parseTable(QString filename) {
-	QFile file(filename);
-	file.open(QIODevice::ReadOnly | QIODevice::Text);
-	QTextStream in(&file);
-
-	TableInfo table;
-	table.isAvailable = false;
-
-	while (!in.atEnd())
-	{
-		QString tempstr = in.readLine();
-		QStringList tokens;
-		tokens = tempstr.split(" ", QString::SkipEmptyParts);
-		if (tokens.isEmpty())
-			continue;
-
-		// CONC: metabolites
-		if (tokens[0] == "Conc.")
-		{
-			while (!in.atEnd())
-			{
-				QString tempstr = in.readLine();
-				tempstr = in.readLine();
-				QStringList tokens;
-				tokens = tempstr.split(" ", QString::SkipEmptyParts);
-				int tokenLen = tokens.length();
-				if (tokenLen == 4)
-				{
-					Metabolite metainfo;
-					metainfo.conc = tokens[0].toFloat();
-					metainfo.sd = tokens[1].left(tokens[1].length() - 1).toInt();
-					metainfo.ratio = tokens[2].toFloat();
-					metainfo.name = tokens[3].toStdString();
-					metainfo.qc = true;
-					table.metaInfo[metainfo.name] = metainfo;
-					if (metaList.empty() || !metaList.contains(QString::fromStdString(metainfo.name))) { // To-do: call routine just once
-						metaList.push_back(QString::fromStdString(metainfo.name));
-					}
-
-				}
-				else if (tokenLen == 0)
-				{
-					break;
-				}
-				else
-				{
-
-				}
-			}
-
-		}
-		// MISC: fwhm, snr
-		if (tokens[0] == "$$MISC")
-		{
-			QString tempstr = in.readLine();
-			tempstr = in.readLine();
-			QStringList tokens;
-			tokens = tempstr.split(" ", QString::SkipEmptyParts);
-
-			table.fwhm = tokens[2].toFloat();
-			table.snr = tokens[6].toInt();
-			table.isAvailable = true;
-		}
-	}
-
-	return table;
-}
-*/
 void MainWindow::presentLCMInfo() {
 	QString info_str;
 	map<string, Metabolite>::iterator metaPos;
@@ -1368,5 +1315,4 @@ QString MainWindow::getLCMFileName()
 {
 	QFileInfo f(imgFileName);
 	return f.absolutePath() + "/" + f.baseName() + ".lcm";
-	
 }
