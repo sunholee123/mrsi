@@ -127,6 +127,7 @@ void MainWindow::setLCMLayout() {
 
 		QPushButton *calAvgConButton = new QPushButton("Calculate Avg. Conc.");
 		gbox->addWidget(calAvgConButton, j + 1, 0);
+		connect(calAvgConButton, SIGNAL(released()), this, SLOT(calAvgButtonClicked()));
 		/*
 		// partial volume correction button
 		QPushButton *pvcButton = new QPushButton("Partial Vol. Corr.");
@@ -142,11 +143,6 @@ void MainWindow::setLCMLayout() {
 		lcmLayout->addWidget(metabolitesBox);
 		lcmLayout->addWidget(lcmInfo);
 	}
-}
-
-void MainWindow::updateMetaChecked(QAbstractButton* button) {
-	if (button->isChecked()) { lcmInfo->append(button->text()); }
-	else { lcmInfo->append("unchecked"); }
 }
 
 void MainWindow::setEnabledT1DepMenus(bool enabled)
@@ -896,7 +892,7 @@ void MainWindow::saveSlabMask(string metabolite) {
 					{
 						map<string, Metabolite>::iterator tempPos = tables[abc.a][abc.b][abc.c].metaInfo.find(metabolite);
 						if (tempPos != tables[abc.a][abc.b][abc.c].metaInfo.end()) {
-							if (tempPos->second.qc)
+							if (tempPos->second.qc && tables[abc.a][abc.b][abc.c].isAvailable)
 							{
 								imagevol[i][j][k] = 1;
 								//imagevol[i][j][k] = tempPos->second.conc;
@@ -914,6 +910,35 @@ void MainWindow::saveSlabMask(string metabolite) {
 	lcmInfo->append("save: slab mask image");
 }
 
+/***** statistics *****/
+void MainWindow::updateMetaChecked(QAbstractButton* button) {
+	if (button->isChecked()) {
+		//lcmInfo->append(button->text());
+		selMetaList.push_back(button->text());
+	}
+	else {
+		//lcmInfo->append("unchecked");
+		int index = selMetaList.indexOf(button->text(), 0);
+		selMetaList.removeAt(index);
+	}
+}
+
+void MainWindow::calAvgButtonClicked() {
+	if (selMetaList.empty()) {
+		lcmInfo->setText("Please select metabolites");
+	}
+	else {
+		QString infotext = "Average concentration of selected metabolites\n";
+		for (int i = 0; i < selMetaList.size(); i++) {
+			string metabolite = selMetaList[i].toStdString();
+			float avg = calAvgConc(metabolite);
+			string text = metabolite + ": " + std::to_string(avg)+"\n";
+			infotext.append(QString::fromStdString(text));			
+		}
+		lcmInfo->setText(infotext);
+	}
+}
+
 float MainWindow::calAvgConc(string metabolite) {
 	float sum = 0;
 	int count = 0;
@@ -924,9 +949,9 @@ float MainWindow::calAvgConc(string metabolite) {
 				map<string, Metabolite>::iterator tempPos;
 				tempPos = tables[i][j][k].metaInfo.find(metabolite);
 				if (tempPos != tables[i][j][k].metaInfo.end()) {
-					if (tempPos->second.qc){ 
+					if (tempPos->second.qc && tables[i][j][k].isAvailable){ 
 						count++; 
-						sum += tempPos->second.conc;
+						sum += tempPos->second.conc * tables[i][j][k].pvc;
 					}
 				}
 			}
