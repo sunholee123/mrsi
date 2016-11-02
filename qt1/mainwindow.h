@@ -91,6 +91,7 @@ public:
 	void valueUpdateIntensity(int value);
 	void updateMetaChecked(QAbstractButton*);
 	void calAvgButtonClicked();
+	void calMajorButtonClicked();
 
 private:
 	QWidget *mainWidget;
