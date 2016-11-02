@@ -78,9 +78,9 @@ public:
 	~MainWindow();
 
 	private slots:
-	void open();
-	void loadDicom();
-	void loadSegImgs();
+	void openT1();
+	void makeSlabFromDicom();
+	void loadT1Segs();
 	void openSlab();
 	void openLCM();
 	void valueUpdateCor(int value);
@@ -98,6 +98,7 @@ private:
 	QLabel *plane[3];
 	QLabel *sliceInfoText[3];
 	QSpinBox *sliceSpinBox[3];
+	QTextEdit *outputWindow;
 	int sliceNum[3]; // coronal, sagittal, axial slice
 	QGridLayout *viewerLayout;
 	QGridLayout *ctrlLayout;
@@ -123,11 +124,11 @@ private:
 	NiftiImage *img = NULL;
 	vec3df T1vol;
 	QImage T1Images[3];
-	QString imgFileName;
+	QString T1FileName;
 	float intensity;
 	float T1MaxVal;
 
-	bool loadImageFile(const QString &);
+	bool loadT1(const QString &);
 	void setDefaultIntensity();
 	float getMaxVal(vec3df imagevol);
 	void setSliceNum();
@@ -198,6 +199,9 @@ private:
 	void calPVC(vec3df gmvol, vec3df wmvol, vec3df csfvol);
 
 	coord n2abc(int n);
+
+	void print(QString str);
+	void printLine();
 };
 
 #endif
