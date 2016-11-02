@@ -177,7 +177,7 @@ private:
 	//bool mask = false;
 
 	bool loadSlabMask(const QString &);
-	void voxelQualityCheck(string metabolite, int sd, float fwhm, int snr);
+	void voxelQualityCheck(string metabolite, int sd, float fwhm, int snr, int conc);
 	void saveSlabMask(string metabolite);
 	QString getMaskFileName(string metabolite);
 

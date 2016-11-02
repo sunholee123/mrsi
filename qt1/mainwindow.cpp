@@ -136,6 +136,10 @@ void MainWindow::setLCMLayout() {
 		gbox->addWidget(calAvgConButton, j + 1, 0);
 		connect(calAvgConButton, SIGNAL(released()), this, SLOT(calAvgButtonClicked()));
 
+		QPushButton *calMajorButton = new QPushButton("Calculate for Major Met.");
+		gbox->addWidget(calMajorButton, j + 1, 1);
+		connect(calMajorButton, SIGNAL(released()), this, SLOT(calMajorButtonClicked()));
+
 		metabolitesBox->setLayout(gbox);
 
 		lcmInfo = new QTextEdit;
@@ -284,6 +288,10 @@ void MainWindow::makeSlabMask() {
 	snrInput->setValidator(new QIntValidator(0, 10, this));
 	form.addRow("SNR(optional)", snrInput);
 
+	QLineEdit *concInput = new QLineEdit(&dialog);
+	snrInput->setValidator(new QIntValidator(0, 10000, this));
+	form.addRow("Conc(optional)", concInput);
+
 	QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, &dialog);
 	form.addRow(&buttonBox);
 	QObject::connect(&buttonBox, SIGNAL(accepted()), &dialog, SLOT(accept()));
@@ -294,10 +302,13 @@ void MainWindow::makeSlabMask() {
 		int sd = sdInput->text().toInt();
 		float fwhm = fwhmInput->text().toFloat();
 		int snr = -1;
+		int conc = 20000;
 		if (!snrInput->text().isEmpty())
 			snr = snrInput->text().toInt();
+		if (!concInput->text().isEmpty())
+			conc = concInput->text().toInt();
 
-		voxelQualityCheck(metabolite, sd, fwhm, snr);
+		voxelQualityCheck(metabolite, sd, fwhm, snr, conc);
 		saveSlabMask(metabolite);
 		loadSlabMask(getMaskFileName(metabolite));
 	}
@@ -860,7 +871,7 @@ bool MainWindow::loadSlabMask(const QString &fileName) {
 	return true;
 }
 
-void MainWindow::voxelQualityCheck(string metabolite, int sd, float fwhm, int snr) {
+void MainWindow::voxelQualityCheck(string metabolite, int sd, float fwhm, int snr, int conc) {
 	if (sd == -1 || fwhm == -1) {
 		// exception -- not available sd, fwhm values 
 	}
@@ -876,7 +887,7 @@ void MainWindow::voxelQualityCheck(string metabolite, int sd, float fwhm, int sn
 						map<string, Metabolite>::iterator tempPos;
 						tempPos = tables[i][j][k].metaInfo.find(metabolite);
 						if (tempPos != tables[i][j][k].metaInfo.end()) {
-							if (tempPos->second.sd > sd || tables[i][j][k].fwhm > fwhm || tables[i][j][k].snr < snr)
+							if (tempPos->second.sd > sd || tempPos->second.conc > conc || tables[i][j][k].fwhm > fwhm || tables[i][j][k].snr < snr )
 								tempPos->second.qc = false;
 							else
 								tempPos->second.qc = true;
@@ -968,19 +979,48 @@ float MainWindow::calAvgConc(string metabolite) {
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 32; j++) {
 			for (int k = 0; k < 32; k++) {
-				map<string, Metabolite>::iterator tempPos;
-				tempPos = tables[i][j][k].metaInfo.find(metabolite);
-				if (tempPos != tables[i][j][k].metaInfo.end()) {
-					if (tempPos->second.qc && tables[i][j][k].isAvailable){ 
-						count++; 
-						sum += tempPos->second.conc * tables[i][j][k].pvc;
+				if (tables[i][j][k].isAvailable) {
+					map<string, Metabolite>::iterator tempPos;
+					tempPos = tables[i][j][k].metaInfo.find(metabolite);
+					if (tempPos != tables[i][j][k].metaInfo.end()) {
+						if (tempPos->second.qc) {
+							count++;
+							sum += tempPos->second.conc * tables[i][j][k].pvc;
+						}
 					}
 				}
 			}
 		}
 	}
 
+	string s1 = "sum: " + std::to_string(sum); 
+	string s2 = "count: " + std::to_string(count);
+	lcmInfo->append(QString::fromStdString(s1));
+	lcmInfo->append(QString::fromStdString(s2));
+
 	return (sum/count);
+}
+
+void MainWindow::calMajorButtonClicked() {
+	QStringList majorList = { "NAA", "GPC+PCh", "Cr+PCr", "Glu+Gln", "Ins" };
+	int sd = 20;
+	float fwhm = 0.2;
+	int snr = -1;
+	int conc = 50;
+
+	QString titletext = "Average concentration of major metabolites\n";
+	//titletext.append("QC values: %SD<=20, FWHM<=0.1\n");
+	titletext.append("QC values: %SD<=20, FWHM<=0.2, Conc<=50\n");
+	//titletext.append("QC values: %SD<=20, FWHM<=0.15\n");
+	lcmInfo->setText(titletext);
+
+	for (int i = 0; i < majorList.size(); i++) {
+		string metabolite = majorList[i].toStdString();
+		voxelQualityCheck(metabolite, sd, fwhm, snr, conc);
+		float avg = calAvgConc(metabolite);
+		string text = metabolite + ": " + std::to_string(avg) + "\n";
+		lcmInfo->append(QString::fromStdString(text));
+	}
 }
 
 void MainWindow::calPVC(vec3df gmvol, vec3df wmvol, vec3df csfvol)
