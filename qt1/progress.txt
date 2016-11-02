@@ -1,4 +1,0 @@
-- 현재  1mm reslice 한 이미지만 분석에 사용 가능. (언젠가... 수정 필요)
-- 테스트용 파일은 MRS09
-
-arr1Dto3D -> getImgvol

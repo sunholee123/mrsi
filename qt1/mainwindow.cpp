@@ -33,10 +33,15 @@ MainWindow::MainWindow()
 		sliceNum[i] = 1;
 		sliceSpinBox[i]->setValue(sliceNum[i]);
 	}
+	// intensity spinbox
 	intensitySpinBox = new QSpinBox();
 	intensitySpinBox->setRange(0, 9999);
 	intensity = 0;
 	intensitySpinBox->setValue(intensity);
+
+	// output messages window
+	outputWindow = new QTextEdit;
+	outputWindow->setReadOnly(true);
 
 	connect(sliceSpinBox[0], SIGNAL(valueChanged(int)), this, SLOT(valueUpdateCor(int)));
 	connect(sliceSpinBox[1], SIGNAL(valueChanged(int)), this, SLOT(valueUpdateSag(int)));
@@ -58,6 +63,7 @@ MainWindow::MainWindow()
 	intensityText = new QLabel("<font color = 'black'>Intensity: </font>");
 	ctrlLayout->addWidget(intensityText, i, 0);
 	ctrlLayout->addWidget(intensitySpinBox, i, 1);
+	ctrlLayout->addWidget(outputWindow, i + 1, 0);
 	
 	viewerLayout->addLayout(ctrlLayout, 1, 1);
 	createActions();
@@ -71,10 +77,16 @@ MainWindow::MainWindow()
 
 MainWindow::~MainWindow()
 {
-	if(img != NULL)
+	if (img != NULL)
+	{
+		img->close();
 		delete img;
+	}
 	if (slab != NULL)
+	{
+		slab->close();
 		delete slab;
+	}
 	if (!T1vol.empty())
 		T1vol = vec3df();
 	if (!slabvol.empty())
@@ -97,7 +109,8 @@ void MainWindow::setLCMLayout() {
 
 		lcmLayout->addWidget(lcmInfoBox);
 	}
-	else { // LCM info loaded
+	else if (lcmInfoBox->isVisible())
+	{ // LCM info loaded
 		lcmInfoBox->setHidden(true);
 		
 		QGroupBox *metabolitesBox = new QGroupBox(tr("select metabolites need to be analyzed"));
@@ -123,16 +136,6 @@ void MainWindow::setLCMLayout() {
 		gbox->addWidget(calAvgConButton, j + 1, 0);
 		connect(calAvgConButton, SIGNAL(released()), this, SLOT(calAvgButtonClicked()));
 
-		QPushButton *calMajorButton = new QPushButton("Calculate Major Met.");
-		gbox->addWidget(calMajorButton, j + 1, 1);
-		connect(calMajorButton, SIGNAL(released()), this, SLOT(calMajorButtonClicked()));
-		/*
-		// partial volume correction button
-		QPushButton *pvcButton = new QPushButton("Partial Vol. Corr.");
-		gbox->addWidget(pvcButton, j + 1, 1);
-		connect(pvcButton, SIGNAL(released()), this, SLOT(calPVC()));
-		*/
-
 		metabolitesBox->setLayout(gbox);
 
 		lcmInfo = new QTextEdit;
@@ -157,16 +160,16 @@ void MainWindow::createActions()
 	slabMenu = menuBar()->addMenu(tr("Slab"));
 	QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
 
-	QAction *openImgAct = fileMenu->addAction(tr("Open T1 Image"), this, &MainWindow::open);
+	QAction *openT1Act = fileMenu->addAction(tr("Open T1 Image"), this, &MainWindow::openT1);
 	overlaySlabAct = fileMenu->addAction(tr("Overlay Slab"), this, &MainWindow::openSlab);
 	openSlabMaskAct = fileMenu->addAction(tr("Overlay Slab Mask"), this, &MainWindow::openSlabMask);
 	QAction *exitAct = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
 	
-	QAction *openDicomAct = slabMenu->addAction(tr("Create Slab Image from DICOM files"), this, &MainWindow::loadDicom);
-	QAction *makeSlabMaskAct = slabMenu->addAction(tr("Create Slab Mask Image"), this, &MainWindow::makeSlabMask);
+	QAction *openDicomAct = slabMenu->addAction(tr("Create Slab Image from DICOM files"), this, &MainWindow::makeSlabFromDicom);
 	QAction *loadLCMInfoAct = slabMenu->addAction(tr("Load LCM Info"), this, &MainWindow::openLCM);
-	QAction *loadSegImgsAct = slabMenu->addAction(tr("Load FSLVBM Segmented Images"), this, &MainWindow::loadSegImgs);
-	
+	QAction *loadSegImgsAct = slabMenu->addAction(tr("Load FSLVBM Segmented Images"), this, &MainWindow::loadT1Segs);
+	QAction *makeSlabMaskAct = slabMenu->addAction(tr("Create Slab Mask Image"), this, &MainWindow::makeSlabMask);
+
 	// Some menus and actions are disabled until the T1 image is fully loaded
 	setEnabledT1DepMenus(false);
 
@@ -175,11 +178,11 @@ void MainWindow::createActions()
 	slabMenu->addSeparator();
 }
 
-void MainWindow::open()
+void MainWindow::openT1()
 {
 	QFileDialog dialog(this, tr("Open File"));
 	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
-	while (dialog.exec() == QDialog::Accepted && !loadImageFile(dialog.selectedFiles().first())) {}
+	while (dialog.exec() == QDialog::Accepted && !loadT1(dialog.selectedFiles().first())) {}
 
 	// if the slab file exists, then load it
 	// future work: optimization (duplication of drawing parts)
@@ -191,21 +194,32 @@ void MainWindow::open()
 	f = QFileInfo(getLCMFileName());
 	if (f.exists() && f.isFile())
 		readLCMData();
+
+	f = QFileInfo(T1FileName);
+	f = QFileInfo(f.absolutePath());
+	if (f.exists() && f.isDir() && (slab != NULL))
+		loadT1Segs();
+
+	printLine();
 }
 
 void MainWindow::openSlab() {
-	QFileDialog dialog(this, tr("Open File"));
+	QFileDialog dialog(this, tr("Open Image File"));
 	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
 	while (dialog.exec() == QDialog::Accepted && !loadSlab(dialog.selectedFiles().first())) {}
+	
+	printLine();
 }
 
 void MainWindow::openSlabMask() {
 	QFileDialog dialog(this, tr("Open File"));
 	dialog.setNameFilter(tr("Nifti files (*.nii.gz *.nii *.hdr)"));
 	while (dialog.exec() == QDialog::Accepted && !loadSlabMask(dialog.selectedFiles().first())) {}
+
+	printLine();
 }
 
-void MainWindow::loadDicom()
+void MainWindow::makeSlabFromDicom()
 {
 	QFileDialog dialog(this, tr("Select Directory"));
 	dialog.setFileMode(QFileDialog::Directory);
@@ -216,12 +230,13 @@ void MainWindow::loadDicom()
 			loadSlab(getSlabFileName());
 		}
 	}
+	printLine();
 }
 
-void MainWindow::loadSegImgs()
+void MainWindow::loadT1Segs()
 {
 	// get T1 directory name
-	QFileInfo f(imgFileName);
+	QFileInfo f(T1FileName);
 	
 	// load gm, wm, csf images
 	QString gmFileName = f.absolutePath() + "/struc/" + f.baseName() + "_struc_GM.nii.gz";
@@ -236,8 +251,12 @@ void MainWindow::loadSegImgs()
 	wmvol = getImgvol(&wmimg);
 	csfvol = getImgvol(&csfimg);
 
+	print("Loading segmented T1 images is complete. (" + gmFileName + ", " + wmFileName + ", " + csfFileName + ")");
+	
 	// calculate PVC value automatically
 	calPVC(gmvol, wmvol, csfvol);
+	print("Partial Volume Correction is complete.");
+	printLine();
 }
 
 void MainWindow::makeSlabMask() {
@@ -280,28 +299,33 @@ void MainWindow::makeSlabMask() {
 
 		voxelQualityCheck(metabolite, sd, fwhm, snr);
 		saveSlabMask(metabolite);
+		loadSlabMask(getMaskFileName(metabolite));
 	}
+	printLine();
 }
 
 void MainWindow::openLCM() {
 	QFileDialog dialog(this, tr("Select Directory"));
 	dialog.setFileMode(QFileDialog::Directory);
-	if (dialog.exec() == QDialog::Accepted) {
-		loadLCMInfo(dialog.selectedFiles().first());
-	}
-	saveLCMData();
+	if (dialog.exec() == QDialog::Accepted && loadLCMInfo(dialog.selectedFiles().first()))
+		saveLCMData();
+	printLine();
 }
 
-/***** load MRI image *****/
-bool MainWindow::loadImageFile(const QString &fileName)
+/***** load T1 image *****/
+bool MainWindow::loadT1(const QString &fileName)
 {
 	// load mri image
-	if (overlay == true) { overlay = false; delete slab; }
-	if (img != NULL) { delete img; }
+	if (overlay == true)
+		overlay = false;
 
-	imgFileName = fileName;
-	string filename = fileName.toStdString();
-	img = new NiftiImage(filename, 'r');
+	if (img != NULL)
+	{
+		img->close();
+		delete img;
+	}
+
+	img = new NiftiImage(fileName.toStdString(), 'r');
 	T1vol = getImgvol(img);
 
 	setDefaultIntensity();
@@ -311,9 +335,10 @@ bool MainWindow::loadImageFile(const QString &fileName)
 	drawPlane(SAGITTAL);
 	drawPlane(AXIAL);
 
-	const QString message = tr("Opened \"%1\\").arg(QDir::toNativeSeparators(fileName));
-	statusBar()->showMessage(message);
 	setEnabledT1DepMenus(true);
+
+	T1FileName = fileName;
+	print("Loading T1 image is complete. (" + T1FileName +")");
 
 	return true;
 }
@@ -429,18 +454,22 @@ bool MainWindow::findDicomFiles(QString dir)
 
 /***** load Slab image *****/
 bool MainWindow::loadSlab(const QString &fileName) {
-	if (slab != NULL) { delete slab; }
+	if (slab != NULL)
+	{
+		slab->close();
+		delete slab;
+	}
 
-	string filename = fileName.toStdString();
-	slab = new NiftiImage(filename, 'r');
+	slab = new NiftiImage(fileName.toStdString(), 'r');
 	slabvol = getImgvol(slab);
 
-overlay = true;
+	overlay = true;
 
 	drawPlane(CORONAL);
 	drawPlane(SAGITTAL);
 	drawPlane(AXIAL);
 
+	print("Loading slab image is complete. (" + fileName + ")");
 	return true;
 }
 
@@ -463,8 +492,8 @@ bool MainWindow::loadLCMInfo(QString dir)
 			tables[i][j] = new TableInfo[32];
 		}
 	}
-		QTime myTimer;
-		myTimer.start();
+
+	int filecount = 0;
 	while (it.hasNext())
 	{
 		it.next();
@@ -477,9 +506,12 @@ bool MainWindow::loadLCMInfo(QString dir)
 		int y = stoi(filename.substr(index1 + 1, index2 - 1));
 		int z = stoi(filename.substr(index2 + 1, index3 - 1));
 		tables[x - 1][y - 1][z - 1] = parseTable(filepath);
+		filecount++;
 	}
-		statusBar()->showMessage(QString::number(myTimer.elapsed()));
+
 	setLCMLayout();
+
+	print("Loading LCModel table files is complete. (" + dir + ", " + QString::number(filecount) + " files)");
 	return true;
 }
 
@@ -543,75 +575,6 @@ TableInfo MainWindow::parseTable(string filename) {
 	return table;
 }
 
-/* Slow... T_T
-TableInfo MainWindow::parseTable(QString filename) {
-	QFile file(filename);
-	file.open(QIODevice::ReadOnly | QIODevice::Text);
-	QTextStream in(&file);
-
-	TableInfo table;
-	table.isAvailable = false;
-
-	while (!in.atEnd())
-	{
-		QString tempstr = in.readLine();
-		QStringList tokens;
-		tokens = tempstr.split(" ", QString::SkipEmptyParts);
-		if (tokens.isEmpty())
-			continue;
-
-		// CONC: metabolites
-		if (tokens[0] == "Conc.")
-		{
-			while (!in.atEnd())
-			{
-				QString tempstr = in.readLine();
-				tempstr = in.readLine();
-				QStringList tokens;
-				tokens = tempstr.split(" ", QString::SkipEmptyParts);
-				int tokenLen = tokens.length();
-				if (tokenLen == 4)
-				{
-					Metabolite metainfo;
-					metainfo.conc = tokens[0].toFloat();
-					metainfo.sd = tokens[1].left(tokens[1].length() - 1).toInt();
-					metainfo.ratio = tokens[2].toFloat();
-					metainfo.name = tokens[3].toStdString();
-					metainfo.qc = true;
-					table.metaInfo[metainfo.name] = metainfo;
-					if (metaList.empty() || !metaList.contains(QString::fromStdString(metainfo.name))) { // To-do: call routine just once
-						metaList.push_back(QString::fromStdString(metainfo.name));
-					}
-
-				}
-				else if (tokenLen == 0)
-				{
-					break;
-				}
-				else
-				{
-
-				}
-			}
-
-		}
-		// MISC: fwhm, snr
-		if (tokens[0] == "$$MISC")
-		{
-			QString tempstr = in.readLine();
-			tempstr = in.readLine();
-			QStringList tokens;
-			tokens = tempstr.split(" ", QString::SkipEmptyParts);
-
-			table.fwhm = tokens[2].toFloat();
-			table.snr = tokens[6].toInt();
-			table.isAvailable = true;
-		}
-	}
-
-	return table;
-}
-*/
 void MainWindow::presentLCMInfo() {
 	QString info_str;
 	map<string, Metabolite>::iterator metaPos;
@@ -926,7 +889,7 @@ void MainWindow::voxelQualityCheck(string metabolite, int sd, float fwhm, int sn
 			}
 		}
 		//lcmInfo->append("slab table qc value all changed");
-		lcmInfo->append(QString::fromStdString(metabolite));
+		print("All QC values of slab voxels are changed.");
 	}
 }
 
@@ -965,7 +928,8 @@ void MainWindow::saveSlabMask(string metabolite) {
 	}
 	
 	saveImageFile(getMaskFileName(metabolite).toStdString(), img, imagevol);
-	lcmInfo->append("save: slab mask image");
+	//lcmInfo->append("save: slab mask image");
+	print("Slab mask image saved.");
 }
 
 /***** statistics *****/
@@ -994,7 +958,6 @@ void MainWindow::calAvgButtonClicked() {
 			infotext.append(QString::fromStdString(text));			
 		}
 		lcmInfo->setText(infotext);
-		//lcmInfo->append(infotext);
 	}
 }
 
@@ -1002,8 +965,6 @@ float MainWindow::calAvgConc(string metabolite) {
 	float sum = 0;
 	int count = 0;
 
-	
-	/*
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 32; j++) {
 			for (int k = 0; k < 32; k++) {
@@ -1012,61 +973,14 @@ float MainWindow::calAvgConc(string metabolite) {
 				if (tempPos != tables[i][j][k].metaInfo.end()) {
 					if (tempPos->second.qc && tables[i][j][k].isAvailable){ 
 						count++; 
-						sum += tempPos->second.conc;
+						sum += tempPos->second.conc * tables[i][j][k].pvc;
 					}
 				}
 			}
 		}
 	}
-	*/
-
-	
-	for (int i = 0; i < 3; i++) {
-		for (int j = 0; j < 32; j++) {
-			for (int k = 0; k < 32; k++) {
-				if (tables[i][j][k].isAvailable) {
-					map<string, Metabolite>::iterator tempPos;
-					tempPos = tables[i][j][k].metaInfo.find(metabolite);
-					if (tempPos != tables[i][j][k].metaInfo.end()) {
-						if (tempPos->second.qc && tempPos->second.conc < 50) {
-							count++;
-							sum += tempPos->second.conc * tables[i][j][k].pvc;
-						}
-					}
-				}				
-			}
-		}
-	}
-	
-	string s1 = "sum: " + std::to_string(sum);
-	string s2 = "count: " + std::to_string(count);
-	lcmInfo->append(QString::fromStdString(s1));
-	lcmInfo->append(QString::fromStdString(s2));
 
 	return (sum/count);
-}
-
-void MainWindow::calMajorButtonClicked() {
-	QStringList majorList = { "NAA", "NAA+NAAG","GPC+PCh", "Cr+PCr", "Glu+Gln", "Ins" };
-	int sd = 20;
-	float fwhm = 0.2;
-	int snr = -1;
-	
-	QString titletext = "Average concentration of major metabolites\n";
-	//titletext.append("QC values: %SD<=20, FWHM<=0.1\n");
-	titletext.append("QC values: %SD<=20, FWHM<=0.2\n");
-	//titletext.append("QC values: %SD<=20, FWHM<=0.15\n");
-	lcmInfo->setText(titletext);
-
-	QString infotext = "";
-	for (int i = 0; i < majorList.size(); i++) {
-		string metabolite = majorList[i].toStdString();
-		voxelQualityCheck(metabolite, sd, fwhm, snr);
-		float avg = calAvgConc(metabolite);
-		string text = metabolite + ": " + std::to_string(avg) + "\n";
-		infotext.append(QString::fromStdString(text));
-	}
-	lcmInfo->append(infotext);
 }
 
 void MainWindow::calPVC(vec3df gmvol, vec3df wmvol, vec3df csfvol)
@@ -1162,8 +1076,6 @@ vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordF
 	MatrixXf imgcoord(4, 1);
 	MatrixXf newcoord(4, 1);
 	int x, y, z;
-//	QTime myTimer;
-//	myTimer.start();
 	for (int i = 0; i < dimX; i++) {
 		for (int j = 0; j < dimY; j++) {
 			for (int k = 0; k < dimZ; k++) {
@@ -1179,7 +1091,7 @@ vec3df MainWindow::transformation3d(vec3df imagevol, float coordAP, float coordF
 			}
 		}
 	}
-//	statusBar()->showMessage(QString::number(myTimer.elapsed()));
+
 	return rotvol;
 }
 float MainWindow::deg2rad(float degree)
@@ -1282,7 +1194,11 @@ void MainWindow::makeSlab()
 			}
 		}
 	}
-	saveImageFile(getSlabFileName().toStdString(), img, slab);
+	print("Creating slab image is complete.");
+
+	QString filename = getSlabFileName();
+	saveImageFile(filename.toStdString(), img, slab);
+	print("Saving slab image is complete. (" + filename + ")");
 }
 
 float* MainWindow::arr3Dto1D(NiftiImage *image, vec3df imagevol) {
@@ -1312,13 +1228,13 @@ bool MainWindow::saveImageFile(string filename, NiftiImage *image, vec3df data)
 
 QString MainWindow::getSlabFileName()
 {
-	QFileInfo f(imgFileName);
+	QFileInfo f(T1FileName);
 	return (f.absolutePath() + "/" + f.baseName() + "_slab." + f.completeSuffix());
 }
 
 QString MainWindow::getMaskFileName(string metabolite)
 {
-	QFileInfo f(imgFileName);
+	QFileInfo f(T1FileName);
 	//return (f.absolutePath() + "/" + f.baseName() + "_mask." + f.completeSuffix()); // further work -- "_(metabolite name)"
 	return (f.absolutePath() + "/" + f.baseName() + "_mask_" + QString::fromStdString(metabolite) + "." + f.completeSuffix());
 }
@@ -1347,7 +1263,8 @@ coord MainWindow::n2abc(int n)
 
 void MainWindow::saveLCMData()
 {
-	QFile file(getLCMFileName());
+	QString filename = getLCMFileName();
+	QFile file(filename);
 	if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
 	{
 		QMessageBox::StandardButton msg;
@@ -1381,11 +1298,13 @@ void MainWindow::saveLCMData()
 			}
 		}
 	}
+	print("Saving LCModel data file is complete. (" + filename + ")");
 }
 
 void MainWindow::readLCMData()
 {
-	QFile file(getLCMFileName());
+	QString filename = getLCMFileName();
+	QFile file(filename);
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
 	{
 		QMessageBox::StandardButton msg;
@@ -1440,13 +1359,23 @@ void MainWindow::readLCMData()
 			tables[a][b][c].snr = tokens[tokenLen - 1].toInt();
 		}
 	}
-	saveLCMData();	// test for equality
+//	saveLCMData();	// test for equality
+	print("Loading LCModel data file is complete. (" + filename + ")");
 	setLCMLayout();
 }
 
 QString MainWindow::getLCMFileName()
 {
-	QFileInfo f(imgFileName);
+	QFileInfo f(T1FileName);
 	return f.absolutePath() + "/" + f.baseName() + ".lcm";
-	
+}
+
+void MainWindow::print(QString str)
+{
+	outputWindow->append(str);
+}
+
+void MainWindow::printLine()
+{
+	outputWindow->append("--------------------------------------------------");
 }
