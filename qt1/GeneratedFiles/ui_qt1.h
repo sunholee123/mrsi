@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'qt1.ui'
 **
-** Created by: Qt User Interface Compiler version 5.7.0
+** Created by: Qt User Interface Compiler version 5.7.1
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -55,7 +55,7 @@ public:
 
     void retranslateUi(QMainWindow *qt1Class)
     {
-        qt1Class->setWindowTitle(QApplication::translate("qt1Class", "qt1", 0));
+        qt1Class->setWindowTitle(QApplication::translate("qt1Class", "qt1", Q_NULLPTR));
     } // retranslateUi
 
 };
